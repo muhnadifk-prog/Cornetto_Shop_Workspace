@@ -1,0 +1,6 @@
+backup*.json
+arsip*.json
+.env*
+.vercel/
+node_modules/
+*-private.json

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#187457">
+  <title>Cornetto Shop | Workspace</title>
+  <link rel="stylesheet" href="cornetto.css">
+  <link rel="stylesheet" href="workspace.css">
+  <script src="lucide.min.js" defer></script>
+  <script src="cornetto-modules.js" defer></script>
+  <script src="cornetto.js" defer></script>
+  <script src="migration.js" defer></script>
+  <script src="workspace.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="#dashboard"><span class="brand-mark">c<span>.</span></span><span>Cornetto<span class="brand-sub">SHOP WORKSPACE</span></span></a>
+    <div class="store"><img src="phone.jpg" alt="Handphone" width="38" height="38"><div><strong>Cornetto Shop</strong><span>Handphone & elektronik</span></div></div>
+    <p class="nav-label">WORKSPACE</p>
+    <nav aria-label="Navigasi utama">
+      <a href="#dashboard" data-nav="dashboard"><i data-lucide="layout-dashboard"></i>Ringkasan</a>
+      <a href="#stock" data-nav="stock"><i data-lucide="package"></i>Inventori<span class="nav-count" id="stockCount"></span></a>
+      <a href="#sales" data-nav="sales"><i data-lucide="shopping-bag"></i>Penjualan</a>
+      <a href="#books" data-nav="books"><i data-lucide="book-open"></i>Pembukuan</a>
+      <a href="#cards" data-nav="cards"><i data-lucide="credit-card"></i>Kartu kredit</a>
+      <a href="#tax" data-nav="tax"><i data-lucide="receipt-text"></i>Pajak</a>
+      <a href="#settings" data-nav="settings"><i data-lucide="settings-2"></i>Pengaturan</a>
+      <a href="#data" data-nav="data"><i data-lucide="database"></i>Data & backup</a>
+    </nav>
+    <div class="sidebar-bottom"><div class="demo-status" id="storageBadge"><span class="status-dot"></span>Belum ada data</div><div class="profile"><span class="avatar">N</span><div><strong>Nadif</strong><span>Pemilik toko</span></div></div></div>
+  </aside>
+  <button class="nav-scrim" id="navScrim" aria-label="Tutup navigasi" hidden></button>
+  <div class="workspace">
+    <header class="topbar"><div class="breadcrumb"><button class="icon-button mobile-menu" id="menu" aria-label="Buka navigasi" title="Buka navigasi"><i data-lucide="menu"></i></button><span>Workspace</span><i data-lucide="chevron-right"></i><strong id="crumb">Ringkasan</strong></div><div class="top-right"><span class="demo-badge">LOKAL</span><span class="top-date" id="todayLabel"></span></div></header>
+    <main id="main"></main>
+    <footer><span id="saveStatus" role="status">Memuat data...</span><span>Cloud belum tersambung</span></footer>
+  </div>
+  <dialog id="drawer" aria-labelledby="drawerTitle"><div class="drawer-head"><div><span class="eyebrow" id="drawerEyebrow">TRANSAKSI BARU</span><h2 id="drawerTitle"></h2></div><button class="icon-button" id="closeDrawer" aria-label="Tutup panel" title="Tutup panel"><i data-lucide="x"></i></button></div><div id="drawerBody"></div></dialog>
+  <div id="toast" class="toast" role="status"></div>
+</body>
+</html>
