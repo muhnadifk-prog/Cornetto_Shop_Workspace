@@ -11,10 +11,10 @@ function snapshot(){return {app:'cornetto-workspace',version:1,exportedAt:new Da
 function applyState(d){({inventory,sales,expenses,ledger,channels,suppliers,cards,cardCharges,cardPayments,taxPayments,business,taxProfile,taxAdjustments,inputVat,migration,legacyArchive}=d);inventory.forEach(p=>{if(p.date)p.age=Math.max(0,Math.floor((Date.parse(TODAY+'T12:00:00Z')-Date.parse(p.date+'T12:00:00Z'))/86400000));});syncFees();}
 function openDatabase(){return new Promise((resolve,reject)=>{const r=indexedDB.open('cornetto-workspace-private-v1',1);r.onupgradeneeded=()=>r.result.createObjectStore('workspace');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);r.onblocked=()=>reject(Error('Tutup tab workspace lainnya lalu muat ulang.'));});}
 function readStored(key){return new Promise((resolve,reject)=>{const r=db.transaction('workspace').objectStore('workspace').get(key);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});}
-function persist(d,recovery=false){return new Promise((resolve,reject)=>{
-  const tx=db.transaction('workspace','readwrite'),store=tx.objectStore('workspace'),r=store.get('current');let next;
-  r.onsuccess=()=>{const prev=r.result;if((prev?.revision||0)!==revision){tx.abort();return;}next=revision+1;if(recovery&&prev)store.put(prev,'before-import');store.put({revision:next,data:d},'current');};
-  tx.oncomplete=()=>{revision=next;resolve();};tx.onerror=()=>reject(tx.error||Error('Penyimpanan gagal.'));tx.onabort=()=>reject(Error('Data berubah di tab lain atau penyimpanan gagal. Unduh backup lalu muat ulang.'));
+function persist(d,recovery=false,syncOverride){return new Promise((resolve,reject)=>{
+  const expectedRevision=revision,tx=db.transaction('workspace','readwrite'),store=tx.objectStore('workspace'),r=store.get('current');let next;
+  r.onsuccess=()=>{const prev=r.result;if((prev?.revision||0)!==expectedRevision){tx.abort();return;}next=expectedRevision+1;if(recovery&&prev)store.put(prev,'before-import');const sync=syncOverride!==undefined?syncOverride:prev?.sync?{...prev.sync,dirty:true}:null;store.put({revision:next,data:d,sync},'current');};
+  tx.oncomplete=()=>{revision=next;window.dispatchEvent(new Event('cornetto:saved'));resolve();};tx.onerror=()=>reject(tx.error||Error('Penyimpanan gagal.'));tx.onabort=()=>reject(Error('Data berubah di tab lain atau penyimpanan gagal. Unduh backup lalu muat ulang.'));
 });}
 function saveDemo(){
   const data=structuredClone(snapshot());savePending++;updateStorageBadge();
@@ -27,6 +27,8 @@ function updateStorageBadge(){
   el('saveStatus').textContent=storageFailed?'GAGAL DISIMPAN - unduh backup sebelum menutup':savePending?'Menyimpan...':'Tersimpan di perangkat ini';
   el('saveStatus').classList.toggle('red-text',storageFailed);
   el('storageBadge').textContent=storageFailed?'Penyimpanan bermasalah':'Lokal / cloud belum aktif';
+  const cloud=window.cornettoCloudStatus?.();
+  if(cloud){if(!storageFailed&&!savePending)el('saveStatus').textContent=cloud.message;el('storageBadge').textContent=cloud.summary;el('cloudBadge').textContent=cloud.label;el('cloudSummary').textContent=cloud.summary;}
 }
 function periodStart(){if(period==='month')return TODAY.slice(0,7)+'-01';const d=new Date(TODAY+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-6);return d.toISOString().slice(0,10);}
 function periodLabel(){return period==='all'?'Seluruh riwayat':period==='month'?new Date(TODAY+'T12:00:00').toLocaleDateString('id-ID',{month:'long',year:'numeric'}):date(periodStart())+' - '+date(TODAY);}
@@ -103,6 +105,6 @@ async function startWorkspace(){
   document.body.inert=true;emptyWorkspace();el('todayLabel').textContent=new Date(TODAY+'T12:00:00').toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'});
   try{db=await openDatabase();const stored=await readStored('current');if(stored){validateSnapshot(stored.data);applyState(stored.data);revision=stored.revision;}view=stored?(labels[location.hash.slice(1)]?location.hash.slice(1):'dashboard'):'data';render();}
   catch(err){storageFailed=true;el('main').textContent='Data tidak dapat dibuka: '+err.message;updateStorageBadge();}
-  finally{document.body.inert=false;}
+  finally{document.body.inert=false;window.cornettoReady=true;window.dispatchEvent(new Event('cornetto:ready'));}
 }
 startWorkspace();

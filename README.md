@@ -4,7 +4,11 @@ Separate redesign of the stock and sales tracker. Static site, no build command.
 
 ## Storage Status
 
-This release uses per-browser IndexedDB. Cloud authentication and synchronization are NOT connected. Do not treat a successful deployment as a successful cloud migration. Back up before changing browsers or clearing website data.
+This release supports Supabase email/password login with per-browser IndexedDB as an offline copy. Sign in with the original tracker account and select Activate cloud once to upload this browser's workspace. Data is only cloud-backed after the status says it is synchronized. Back up before changing browsers or clearing website data, especially while changes are pending.
+
+Cloud data uses a separate `cornetto_workspace_v1` table; the original tracker's `app_data` is not modified. Apply `cloud-setup.sql` once as project administrator. Row-level security permits only the signed-in owner to read their row. All writes use an owner-scoped RPC with revision checks, retry identity and a previous-data recovery copy. The browser configuration contains only a public publishable key, never a service-role secret. The Supabase JavaScript SDK 2.117.2 is vendored as `supabase.min.js` (MIT).
+
+Changes are sent after local saving and retried when connectivity returns. Other devices check for updates on focus and every 30 seconds. Conflicting edits stop synchronization and retain the local copy; choosing cloud data downloads a local backup first. Do not clear browser data or log out with pending edits. A cached workspace is hidden when signed out, but local storage is not encrypted: use a trusted device/OS account.
 
 No customer data, financial records, credentials, or real backup files belong in this repository. Import backups through Data & backup in the deployed browser. Never upload a backup to GitHub.
 
