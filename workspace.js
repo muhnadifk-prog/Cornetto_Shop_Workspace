@@ -31,8 +31,21 @@ function updateStorageBadge(){
   const cloud=window.cornettoCloudStatus?.();
   if(cloud){if(!storageFailed&&!savePending)el('saveStatus').textContent=cloud.message;el('storageBadge').textContent=cloud.summary;el('cloudBadge').textContent=cloud.label;el('cloudSummary').textContent=cloud.summary;}
 }
-function periodStart(){if(period==='month')return TODAY.slice(0,7)+'-01';const d=new Date(TODAY+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-6);return d.toISOString().slice(0,10);}
-function periodLabel(){return period==='all'?'Seluruh riwayat':period==='month'?new Date(TODAY+'T12:00:00').toLocaleDateString('id-ID',{month:'long',year:'numeric'}):date(periodStart())+' - '+date(TODAY);}
+const periodOptions=[['today','Hari ini'],['yesterday','Kemarin'],['week','7 hari terakhir'],['30days','30 hari terakhir'],['month','Bulan ini'],['lastMonth','Bulan lalu'],['year','Tahun ini'],['all','Semua tanggal']];
+function periodRange(key=period,today=TODAY){
+  const d=new Date(today+'T12:00:00Z'),iso=()=>d.toISOString().slice(0,10);
+  let start=today,end=today;
+  if(key==='all')start='0001-01-01';
+  else if(key==='yesterday'){d.setUTCDate(d.getUTCDate()-1);start=end=iso();}
+  else if(key==='week'||key==='30days'){d.setUTCDate(d.getUTCDate()-(key==='week'?6:29));start=iso();}
+  else if(key==='month')start=today.slice(0,7)+'-01';
+  else if(key==='lastMonth'){d.setUTCDate(0);end=iso();start=end.slice(0,7)+'-01';}
+  else if(key==='year')start=today.slice(0,4)+'-01-01';
+  return {start,end};
+}
+function periodStart(){return periodRange().start;}
+function periodEnd(){return periodRange().end;}
+function periodLabel(){return period==='all'?'Seluruh riwayat':(periodOptions.find(([key])=>key===period)?.[1]||'')+' / '+date(periodStart())+(periodStart()===periodEnd()?'':' - '+date(periodEnd()));}
 function reportYears(){return [...new Set([Number(TODAY.slice(0,4)),...sales.map(s=>Number(s.date.slice(0,4)))])].sort((a,b)=>b-a);}
 const formatDate=date;
 // Unknown imported dates and settlement statuses are deliberately not inferred.
@@ -52,13 +65,13 @@ const baseDetail=detail;
 detail=function(kind,id){baseDetail(kind,id);const record=kind==='stock'?productById(id):sales.find(s=>s.id===id);el('drawerBody').insertAdjacentHTML('beforeend',`<div class="detail-extra">${record.legacyId?`<p>ID lama: ${esc(record.legacyId)}</p>`:''}${record.imei?`<p>IMEI: ${esc(record.imei)}</p>`:''}${record.notes?`<p>${esc(record.notes)}</p>`:''}${record.invoice?`<button class="button" data-work="invoice" data-kind="${kind}" data-id="${id}">${icon('file-image')}Invoice</button>`:''}</div>`);refreshIcons();};
 drawChart=function(){
   const c=el('chart');if(!c)return;const rect=c.getBoundingClientRect(),dpr=devicePixelRatio||1,w=rect.width,h=rect.height;c.width=w*dpr;c.height=h*dpr;const ctx=c.getContext('2d');ctx.scale(dpr,dpr);
-  const buckets=new Map();if(period==='all'){for(const s of periodSales())buckets.set(s.date.slice(0,7),0);}else{const d=new Date(periodStart()+'T12:00:00Z');while(d.toISOString().slice(0,10)<=TODAY){buckets.set(d.toISOString().slice(0,10),0);d.setUTCDate(d.getUTCDate()+1);}}
+  const buckets=new Map();if(period==='all'){for(const s of periodSales())buckets.set(s.date.slice(0,7),0);}else{const d=new Date(periodStart()+'T12:00:00Z');while(d.toISOString().slice(0,10)<=periodEnd()){buckets.set(d.toISOString().slice(0,10),0);d.setUTCDate(d.getUTCDate()+1);}}
   if(!buckets.size)buckets.set(TODAY,0);
   for(const s of periodSales()){const key=period==='all'?s.date.slice(0,7):s.date;buckets.set(key,(buckets.get(key)||0)+(graphMetric==='revenue'?revenue(s):profit(s))/1e6);}
   const entries=[...buckets].sort((a,b)=>a[0].localeCompare(b[0])),values=entries.map(r=>r[1]);const hi=Math.max(1,...values),lo=Math.min(0,...values),X=i=>40+i/Math.max(1,values.length-1)*(w-58),Y=v=>h-32-(v-lo)/(hi-lo)*(h-48);
   ctx.font='10px Segoe UI';ctx.fillStyle='#768079';ctx.strokeStyle='#e5ece6';for(let i=0;i<4;i++){const v=lo+(hi-lo)*i/3,y=Y(v);ctx.fillText(v.toFixed(0),0,y);ctx.beginPath();ctx.moveTo(35,y);ctx.lineTo(w-8,y);ctx.stroke();}
   ctx.beginPath();ctx.strokeStyle='#267c5e';ctx.lineWidth=2;values.forEach((v,i)=>i?ctx.lineTo(X(i),Y(v)):ctx.moveTo(X(i),Y(v)));ctx.stroke();ctx.fillStyle='#267c5e';values.forEach((v,i)=>{ctx.beginPath();ctx.arc(X(i),Y(v),2,0,Math.PI*2);ctx.fill();});
-  ctx.fillStyle='#768079';ctx.textAlign='center';const step=Math.max(1,Math.ceil(entries.length/(w<450?4:7)));entries.forEach(([d],i)=>{if(i%step===0)ctx.fillText(period==='all'?d.slice(2):d.slice(8),X(i),h-9);});
+  ctx.fillStyle='#768079';ctx.textAlign='center';const step=Math.max(1,Math.ceil(entries.length/(w<450?4:7)));entries.forEach(([d],i)=>{if(i%step===0)ctx.fillText(period==='all'?d.slice(2):date(d),X(i),h-9);});
   c.onmousemove=e=>{const i=Math.max(0,Math.min(entries.length-1,Math.round((e.offsetX-40)/(w-58)*(entries.length-1))));el('chartTooltip').hidden=false;el('chartTooltip').textContent=entries[i][0]+' / '+money(values[i]*1e6);};c.onmouseleave=()=>{el('chartTooltip').hidden=true;};
 };
 function validateSnapshot(d){
