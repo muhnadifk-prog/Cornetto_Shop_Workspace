@@ -71,6 +71,7 @@ function validateSnapshot(d){
   for(const c of [...d.channels,...d.cards])if(!/^#[a-f0-9]{6}$/i.test(c.color))throw Error('Warna tidak valid.');
   for(const c of d.channels)if(!validAmount(c.fee)||c.fee>100||typeof c.name!=='string'||(c.logo&&!/^data:image\/(png|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(c.logo)))throw Error('Channel tidak valid.');
   for(const c of d.cards)if(!validAmount(c.limit)||typeof c.name!=='string'||typeof c.due!=='string')throw Error('Kartu tidak valid.');
+  for(const c of d.cards)if((c.dueMode!==undefined&&!['manual','cycle'].includes(c.dueMode))||(c.dueMode==='cycle'&&!CardSchedule.validRule(c)))throw Error('Aturan jatuh tempo kartu tidak valid.');
   for(const key of ['name','owner'])if(typeof d.business[key]!=='string')throw Error('Identitas toko tidak lengkap.');
   for(const key of ['categories','conditions','warranties'])if(!Array.isArray(d.business[key])||!d.business[key].every(x=>typeof x==='string'))throw Error('Pilihan produk tidak valid.');
   if(!validAmount(d.taxProfile.rate)||d.taxProfile.rate>100)throw Error('Tarif tidak valid.');
@@ -108,3 +109,4 @@ async function startWorkspace(){
   finally{document.body.inert=false;window.cornettoReady=true;window.dispatchEvent(new Event('cornetto:ready'));}
 }
 startWorkspace();
+

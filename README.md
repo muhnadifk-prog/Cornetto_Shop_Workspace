@@ -16,6 +16,11 @@ No customer data, financial records, credentials, or real backup files belong in
 
 Accepts original stock-tracker v5 JSON or this application's version 1 backup. Imports replace the local workspace only after review, retain a pre-import recovery backup, and preserve the original archive including invoice attachments. Reimport of the same file is blocked. Imported settlement status and missing purchase payment sources remain unknown. Negative stock is preserved and flagged. Card balances cover recorded business purchases/payments, not complete bank statements. Tax eligibility defaults unverified.
 
+## Card Due Dates
+
+Each card may use a manual due date or a monthly statement day (1-31) plus a calendar-day offset (1-60). Short months clamp the statement day to their last day; leap years and year boundaries use UTC calendar arithmetic. Scheduled cards display the next due date, including today. This schedule does not establish statement balances, clear unpaid debt, or apply bank holiday adjustments. Existing cards retain their manual dates until a rule is explicitly saved. Schedule fields are included in backups and cloud snapshots.
+
 ## Deployment
 
 Import this repository into a NEW Vercel project using Other as the framework, no build command, and the repository root as output. Do not link to the original tracker project.
+
