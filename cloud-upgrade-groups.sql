@@ -1,21 +1,5 @@
 begin;
-
-create table public.cornetto_workspace_v1 (
-  user_id uuid primary key references auth.users(id),
-  revision bigint not null check (revision > 0),
-  data jsonb not null,
-  previous_data jsonb,
-  last_operation uuid not null,
-  updated_at timestamptz not null default now()
-);
-alter table public.cornetto_workspace_v1 enable row level security;
-revoke all on public.cornetto_workspace_v1 from public, anon, authenticated;
-grant select on public.cornetto_workspace_v1 to authenticated;
-create policy cornetto_read_own on public.cornetto_workspace_v1
-  for select to authenticated using ((select auth.uid()) = user_id);
-
--- All writes use an owner-scoped, atomic compare-and-swap with retry identity.
-create function public.cornetto_save_workspace_v1(
+create or replace function public.cornetto_save_workspace_v1(
   p_expected_revision bigint, p_operation uuid, p_data jsonb
 ) returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
@@ -54,7 +38,6 @@ begin
   return jsonb_build_object('revision',current_row.revision,'updated_at',current_row.updated_at);
 end;
 $$;
-revoke all on function public.cornetto_save_workspace_v1(bigint,uuid,jsonb) from public, anon, authenticated;
-grant execute on function public.cornetto_save_workspace_v1(bigint,uuid,jsonb) to authenticated;
+
 commit;
 

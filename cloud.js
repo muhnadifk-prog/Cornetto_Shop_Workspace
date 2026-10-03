@@ -56,7 +56,7 @@
       }
       const stored=await readStored('current');localSync=stored?.sync||null;
       if(localSync?.dirty)status('pending','Tersimpan lokal, menunggu sinkron');else if(localSync?.ownerId)status('synced','Tersimpan di cloud'+(localSync.lastSynced?' / '+new Date(localSync.lastSynced).toLocaleTimeString('id-ID'):''));
-    }catch(err){if(err.code==='40001'||String(err.message).includes('CLOUD_CONFLICT')){status('conflict','Ada perubahan dari perangkat lain. Data lokal tidak ditimpa.');showAccount();}else status('pending','Belum tersinkron. Data lokal aman; coba Periksa sinkron.');}
+    }catch(err){if(err.code==='40001'||String(err.message).includes('CLOUD_CONFLICT')||String(err.message).includes('UPGRADE_REQUIRED')){status('conflict','Ada perubahan dari perangkat lain. Data lokal tidak ditimpa.');showAccount();}else status('pending','Belum tersinkron. Data lokal aman; coba Periksa sinkron.');}
     finally{busy=false;refresh();}
   }
   async function flush(){
@@ -140,3 +140,4 @@
   }
   if(window.cornettoReady)start().catch(()=>status('pending','Cloud belum dapat dimuat.'));else window.addEventListener('cornetto:ready',()=>start().catch(()=>status('pending','Cloud belum dapat dimuat.')),{once:true});
 })();
+

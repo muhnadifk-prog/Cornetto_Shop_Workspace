@@ -3,15 +3,16 @@ let ledger=[],migration=null,legacyArchive=null,pendingImport=null,db=null,revis
 let saveQueue=Promise.resolve(),storageFailed=false,savePending=0;
 const stateKeys=['inventory','sales','expenses','ledger','channels','suppliers','cards','cardCharges','cardPayments','taxPayments','business','taxProfile','taxAdjustments','inputVat','migration','legacyArchive'];
 function emptyWorkspace(){
-  inventory=[];sales=[];expenses=[];channels=[{id:'channel-default',name:'Toko',fee:0,color:'#187457',active:true}];suppliers=[];cards=[];cardCharges=[];cardPayments=[];taxPayments=[];ledger=[];
+  inventory=[];sales=[];expenses=[];channels=[{id:'channel-default',name:'Toko',fee:0,color:'#187457',active:true}];suppliers=[];cards=[];cardCharges=[];cardPayments=[];taxPayments=[];ledger=[];cardGroups=[];
   business={name:'Cornetto Shop',owner:'Pemilik',categories:['Handphone','Elektronik'],conditions:['Baru','Bekas'],warranties:['Resmi','Distributor','Tanpa garansi']};
   taxProfile={type:'person',eligible:false,pkp:false,inclusive:true,rate:0.5,verified:false};taxAdjustments={};inputVat={};syncFees();
 }
-function snapshot(){return {app:'cornetto-workspace',version:1,exportedAt:new Date().toISOString(),inventory,sales,expenses,ledger,channels,suppliers,cards,cardCharges,cardPayments,taxPayments,business,taxProfile,taxAdjustments,inputVat,migration,legacyArchive};}
-function applyState(d){({inventory,sales,expenses,ledger,channels,suppliers,cards,cardCharges,cardPayments,taxPayments,business,taxProfile,taxAdjustments,inputVat,migration,legacyArchive}=d);inventory.forEach(p=>{if(p.date)p.age=Math.max(0,Math.floor((Date.parse(TODAY+'T12:00:00Z')-Date.parse(p.date+'T12:00:00Z'))/86400000));});syncFees();}
+function snapshot(){return {app:'cornetto-workspace',version:2,exportedAt:new Date().toISOString(),inventory,sales,expenses,ledger,channels,suppliers,cards,cardCharges,cardPayments,taxPayments,business,taxProfile,taxAdjustments,inputVat,migration,legacyArchive,cardGroups};}
+function applyState(d){({inventory,sales,expenses,ledger,channels,suppliers,cards,cardCharges,cardPayments,taxPayments,business,taxProfile,taxAdjustments,inputVat,migration,legacyArchive}=d);cardGroups=d.cardGroups||[];inventory.forEach(p=>{if(p.date)p.age=Math.max(0,Math.floor((Date.parse(TODAY+'T12:00:00Z')-Date.parse(p.date+'T12:00:00Z'))/86400000));});syncFees();}
 function openDatabase(){return new Promise((resolve,reject)=>{const r=indexedDB.open('cornetto-workspace-private-v1',1);r.onupgradeneeded=()=>r.result.createObjectStore('workspace');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);r.onblocked=()=>reject(Error('Tutup tab workspace lainnya lalu muat ulang.'));});}
 function readStored(key){return new Promise((resolve,reject)=>{const r=db.transaction('workspace').objectStore('workspace').get(key);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});}
 function persist(d,recovery=false,syncOverride){return new Promise((resolve,reject)=>{
+  d={...d,version:2,cardGroups:d.cardGroups||[]};
   const expectedRevision=revision,tx=db.transaction('workspace','readwrite'),store=tx.objectStore('workspace'),r=store.get('current');let next;
   r.onsuccess=()=>{const prev=r.result;if((prev?.revision||0)!==expectedRevision){tx.abort();return;}next=expectedRevision+1;if(recovery&&prev)store.put(prev,'before-import');const sync=syncOverride!==undefined?syncOverride:prev?.sync?{...prev.sync,dirty:true}:null;store.put({revision:next,data:d,sync},'current');};
   tx.oncomplete=()=>{revision=next;window.dispatchEvent(new Event('cornetto:saved'));resolve();};tx.onerror=()=>reject(tx.error||Error('Penyimpanan gagal.'));tx.onabort=()=>reject(Error('Data berubah di tab lain atau penyimpanan gagal. Unduh backup lalu muat ulang.'));
@@ -61,7 +62,7 @@ drawChart=function(){
   c.onmousemove=e=>{const i=Math.max(0,Math.min(entries.length-1,Math.round((e.offsetX-40)/(w-58)*(entries.length-1))));el('chartTooltip').hidden=false;el('chartTooltip').textContent=entries[i][0]+' / '+money(values[i]*1e6);};c.onmouseleave=()=>{el('chartTooltip').hidden=true;};
 };
 function validateSnapshot(d){
-  if(d?.app!=='cornetto-workspace'||d.version!==1)throw Error('Format backup workspace tidak dikenali.');
+  if(d?.app!=='cornetto-workspace'||![1,2].includes(d.version))throw Error('Format backup workspace tidak dikenali.');
   for(const k of stateKeys.slice(0,10))if(!Array.isArray(d[k]))throw Error('Daftar '+k+' tidak valid.');
   for(const k of ['business','taxProfile','taxAdjustments','inputVat'])if(!d[k]||typeof d[k]!=='object')throw Error('Data '+k+' tidak lengkap.');
   for(const k of ['inventory','sales','ledger','channels','suppliers','cards','cardCharges','cardPayments','taxPayments']){const ids=new Set();for(const r of d[k]){if(!/^[a-zA-Z0-9_-]+$/.test(r.id)||ids.has(r.id))throw Error('ID tidak valid/duplikat di '+k);ids.add(r.id);if(r.date&&(!/^\d{4}-\d{2}-\d{2}$/.test(r.date)||!Number.isFinite(Date.parse(r.date))))throw Error('Tanggal tidak valid.');}}
@@ -72,6 +73,11 @@ function validateSnapshot(d){
   for(const c of d.channels)if(!validAmount(c.fee)||c.fee>100||typeof c.name!=='string'||(c.logo&&!/^data:image\/(png|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(c.logo)))throw Error('Channel tidak valid.');
   for(const c of d.cards)if(!validAmount(c.limit)||typeof c.name!=='string'||typeof c.due!=='string')throw Error('Kartu tidak valid.');
   for(const c of d.cards)if((c.dueMode!==undefined&&!['manual','cycle'].includes(c.dueMode))||(c.dueMode==='cycle'&&!CardSchedule.validRule(c)))throw Error('Aturan jatuh tempo kartu tidak valid.');
+  if(d.version===2&&!Array.isArray(d.cardGroups))throw Error('Daftar grup limit tidak lengkap.');
+  const groups=d.cardGroups??[],groupIds=new Set();
+  if(!Array.isArray(groups))throw Error('Grup limit tidak valid.');
+  for(const g of groups){if(!/^[a-zA-Z0-9_-]+$/.test(g.id)||groupIds.has(g.id)||typeof g.name!=='string'||!g.name.trim()||!validAmount(g.limit)||g.limit<=0)throw Error('Grup limit tidak valid.');groupIds.add(g.id);}
+  for(const c of d.cards)if((c.groupId&&!groupIds.has(c.groupId))||(c.legacyAllocation&&(!c.groupId||c.active)))throw Error('Keanggotaan grup kartu tidak valid.');
   for(const key of ['name','owner'])if(typeof d.business[key]!=='string')throw Error('Identitas toko tidak lengkap.');
   for(const key of ['categories','conditions','warranties'])if(!Array.isArray(d.business[key])||!d.business[key].every(x=>typeof x==='string'))throw Error('Pilihan produk tidak valid.');
   if(!validAmount(d.taxProfile.rate)||d.taxProfile.rate>100)throw Error('Tarif tidak valid.');
