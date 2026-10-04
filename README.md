@@ -14,7 +14,17 @@ No customer data, financial records, credentials, or real backup files belong in
 
 ## Migration
 
-Accepts original stock-tracker v5 JSON or this application's version 1 backup. Imports replace the local workspace only after review, retain a pre-import recovery backup, and preserve the original archive including invoice attachments. Reimport of the same file is blocked. Imported settlement status and missing purchase payment sources remain unknown. Negative stock is preserved and flagged. Card balances cover recorded business purchases/payments, not complete bank statements. Tax eligibility defaults unverified.
+Accepts original stock-tracker v5 JSON or this application's version 1-3 backups. Imports replace the local workspace only after review, retain a pre-import recovery backup, and preserve the original archive including invoice attachments. Reimport of the same file is blocked. Imported settlement status and missing purchase payment sources remain unknown. Negative stock is preserved and flagged. Card balances cover recorded business purchases/payments, not complete bank statements. Tax eligibility defaults unverified.
+
+## Installments
+
+Apply `cloud-upgrade-installments.sql` after the initial cloud setup. Snapshot v3 retains schedules inside the original card charge and links repayments to individual installments. Older snapshot writers cannot overwrite v3 cloud data. No legacy purchase is automatically converted or allocated to a physical card.
+
+Purchases can use 1-36 monthly installments. Supported inputs: no interest, flat monthly percentage, fixed monthly amount excluding admin, total interest, or explicit bank principal/interest/admin rows. Admin can be charged on the first statement or monthly. Calendar dates clamp the statement day to short months and then add calendar H+ days. Bank holiday adjustments and early-settlement penalties are not inferred.
+
+The full principal consumes recorded card/group availability once, not once per month. Admin and interest affect recorded debt and operating expenses on their scheduled statement dates. Future fees remain in the schedule, outside current debt. Paying an installment reduces debt, not inventory cost or operating expenses again. Bank-specific installment sublimits, unrelated personal transactions and actual bank limit availability are outside this business ledger.
+
+Payments can be partial and corrected through payment history. Unbilled future installments cannot be paid prematurely through the normal form. Existing charges can be converted only when their principal fits the remaining ordinary debt; ambiguous historical payments are not automatically reassigned. Schedules with payments cannot be edited or removed until those payments are corrected. Schedule removal preserves the original purchase and inventory. For non-flat or variable bank schedules, enter the bank's per-month components.
 
 ## Shared Limits
 

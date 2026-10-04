@@ -3,10 +3,13 @@ let cardGroups=[];
 function cardGroup(c){return cardGroups.find(g=>g.id===c.groupId);}
 function groupBalance(id){return sum(cards.filter(c=>c.groupId===id),c=>cardBalance(c.id));}
 function nearestCardDueLabel(active){
-  const due=active.filter(c=>cardDue(c)&&cardBalance(c.id)>0).sort((a,b)=>cardDue(a).localeCompare(cardDue(b)))[0];
-  if(!due)return 'Jatuh tempo terdekat <strong>-</strong>';
-  const names=active.filter(c=>cardDue(c)===cardDue(due)&&cardBalance(c.id)>0).map(c=>c.bank+' / '+c.name+(c.last4?' / '+c.last4:''));
-  return `Jatuh tempo terdekat <strong>${cardDate(cardDue(due))}</strong><span class="due-card-names">${names.map(esc).join(' &middot; ')}</span>`;
+  const name=c=>c.bank+' / '+c.name+(c.last4?' / '+c.last4:'');
+  const reminders=active.filter(c=>cardDue(c)&&ordinaryCardBalance(c.id)>0).map(c=>({date:cardDue(c),name:name(c)}));
+  for(const {charge,row} of installmentUpcoming()){const c=cards.find(c=>c.id===charge.cardId);if(c)reminders.push({date:row.dueDate,name:name(c)+' / cicilan '+row.number+'/'+charge.installment.months});}
+  reminders.sort((a,b)=>a.date.localeCompare(b.date));
+  if(!reminders.length)return 'Jatuh tempo terdekat <strong>-</strong>';
+  const due=reminders[0].date,names=[...new Set(reminders.filter(r=>r.date===due).map(r=>r.name))];
+  return `${due<TODAY?'Lewat jatuh tempo':'Jatuh tempo terdekat'} <strong>${cardDate(due)}</strong><span class="due-card-names">${names.map(esc).join(' &middot; ')}</span>`;
 }
 function cardLimit(c){return cardGroup(c)?.limit??c.limit;}
 function availableCardLimit(c){const g=cardGroup(c);return g?g.limit-groupBalance(g.id):c.limit-cardBalance(c.id);}
@@ -50,10 +53,11 @@ function cardSection(key,title,body){return `<details class="card-collapse" data
 document.addEventListener('toggle',e=>{const key=e.target.dataset?.cardSection;if(key){if(e.target.open)expandedCardSections.add(key);else expandedCardSections.delete(key);}},true);
 function sharedCardsView(){
   const ungrouped=cards.filter(c=>!c.groupId);
-  return `<div class="section-heading"><h2>Fasilitas kartu</h2><button class="button" data-group-action="manage">${icon('settings-2')}Grup limit</button></div>`+cardGroups.map(g=>{
+  const grouped=cardGroups.map(g=>{
     const members=cards.filter(c=>c.groupId===g.id),legacy=members.filter(c=>c.legacyAllocation),balance=groupBalance(g.id);
     return `<section class="shared-limit-group"><div class="section-heading"><div><h2>${esc(g.name)}</h2><p>${members.filter(c=>!c.legacyAllocation).length} kartu / limit gabungan</p></div><button class="icon-button" data-group-action="edit" data-id="${g.id}" title="Edit limit ${esc(g.name)}" aria-label="Edit limit ${esc(g.name)}">${icon('pencil')}</button></div><div class="shared-limit-totals"><div><span>Limit bersama</span><strong>${money(g.limit)}</strong></div><div><span>Total utang grup</span><strong>${money(balance)}</strong></div><div><span>Sisa limit bersama</span><strong class="${balance>g.limit?'red-text':''}">${money(g.limit-balance)}</strong></div></div>${cardSection(g.id,'Rincian '+members.filter(c=>!c.legacyAllocation).length+' kartu',`${legacy.map(c=>`<div class="shared-legacy"><div><strong>Transaksi lama: kartu belum ditentukan</strong><p>${esc(g.name)} / utang ${money(cardBalance(c.id))} / tetap termasuk total grup</p></div><button class="button" data-action="card-detail" data-id="${c.id}">Rincian ${icon('arrow-up-right')}</button></div>`).join('')}<div class="credit-grid">${members.filter(c=>!c.legacyAllocation).map(creditTile).join('')}</div>`)}</section>`;
-  }).join('')+(ungrouped.length?`<section>${cardSection('independent','Kartu dengan limit sendiri / '+ungrouped.length,`<div class="credit-grid">${ungrouped.map(creditTile).join('')}</div>`)}</section>`:'');
+  }).join('');
+  return `<div class="section-heading"><h2>Fasilitas kartu</h2><button class="button" data-group-action="manage">${icon('settings-2')}Grup limit</button></div>`+cardSection('shared','Kartu dengan limit gabungan / '+cardGroups.length+' grup',grouped||emptyState('Belum ada grup limit.'))+cardSection('independent','Kartu dengan limit sendiri / '+ungrouped.length,`<div class="credit-grid">${ungrouped.map(creditTile).join('')}</div>`);
 }
 function sharedGroupManager(){
   const sources=cards.filter(c=>!c.groupId);
