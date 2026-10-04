@@ -1,0 +1,18 @@
+.installment-import {
+  margin-top: 34px;
+  padding-top: 26px;
+  border-top: 1px solid #dce5df;
+}
+
+.installment-import .module-table {
+  margin-top: 16px;
+}
+
+.installment-import table {
+  min-width: 840px;
+}
+
+.installment-import td:nth-child(2) {
+  min-width: 260px;
+}
+

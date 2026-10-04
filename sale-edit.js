@@ -14,7 +14,7 @@ function editSaleForm(id){
     ${field('Nama pembeli','buyer','text',s.buyer||'','maxlength="80"')}
     <div class="estimate"><span>HPP per unit</span><strong id="editSaleCost">${money(s.cost)}</strong></div>
     <div class="estimate"><span>Laba transaksi</span><strong id="editSaleProfit">${money(profit(s))}</strong></div>
-    ${formFooter('Simpan perubahan')}</form>`,'PENJUALAN / '+id);
+    <label class="purchase-finance-option"><input type="checkbox" name="financePurchase"><span>Atur cicilan kartu untuk pembelian barang ini setelah simpan</span></label>${formFooter('Simpan perubahan')}</form>`,'PENJUALAN / '+id);
 }
 function commitSaleEdit(id,d,baseline){
   const s=sales.find(s=>s.id===id);
@@ -38,6 +38,6 @@ function updateSaleEditEstimate(f){
 for(const event of ['input','change'])document.addEventListener(event,e=>{if(e.target.form?.id==='saleEditForm')updateSaleEditEstimate(e.target.form);});
 document.addEventListener('submit',e=>{
   const f=e.target;if(f.id!=='saleEditForm')return;e.preventDefault();
-  try{commitSaleEdit(f.dataset.id,Object.fromEntries(new FormData(f)),saleEditBaseline);saveDemo();closeDrawer();render();toast('Penjualan diperbarui.');}catch(err){formError(err.message);}
+  try{commitSaleEdit(f.dataset.id,Object.fromEntries(new FormData(f)),saleEditBaseline);const finance=f.elements.financePurchase.checked,productId=f.elements.productId.value;saveDemo();closeDrawer();render();if(finance)purchaseFinanceForm(productId);else toast('Penjualan diperbarui.');}catch(err){formError(err.message);}
 });
 

@@ -5,6 +5,7 @@ const installmentBookLine=(label,value,total=false)=>bookLine(label,value,total,
 function installmentInterestLabel(mode){return mode==='flat'?'Bunga flat per bulan (%)':mode==='monthly'?'Cicilan per bulan, di luar admin (Rp)':'Total bunga dari bank (Rp)';}
 function installmentFormData(f){
   const d=Object.fromEntries(new FormData(f));
+  d.autoPost=f.elements.autoPost?.checked===true;
   if(d.interestMode==='schedule'){
     d.admin=0;d.adminMode='first';d.interestValue=0;
     d.customRows=Array.from({length:Number(d.months)},(_,i)=>Object.fromEntries(['principal','interest','admin'].map(key=>[key,Number(f.elements['bank_'+key+'_'+i]?.value)])));
@@ -15,7 +16,7 @@ function bankScheduleFields(f,seed){
   const months=Number(f.elements.months.value),box=f.querySelector('[data-bank-schedule]');
   if(f.elements.interestMode.value!=='schedule'||!Number.isInteger(months)||months<1||months>36)return;
   if(Number(box.dataset.months)===months&&box.childElementCount)return;
-  const c=cardCharges.find(c=>c.id===f.elements.chargeId?.value),principal=f.id==='stockForm'?Number(f.elements.qty.value)*Number(f.elements.cost.value):c?.amount||0;
+  const c=cardCharges.find(c=>c.id===f.elements.chargeId?.value),principal=f.id==='stockForm'?Number(f.elements.qty.value)*Number(f.elements.cost.value):Number(f.elements.principal?.value)||c?.amount||0;
   const rows=seed||c?.installment?.customRows;
   box.dataset.months=months;
   box.innerHTML=`<div class="module-table bank-schedule-table"><table><thead><tr><th>Bulan</th><th>Pokok (Rp)</th><th>Bunga (Rp)</th><th>Admin (Rp)</th></tr></thead><tbody>${Array.from({length:months},(_,i)=>`<tr><td>${i+1}</td>${['principal','interest','admin'].map(key=>`<td><input type="number" name="bank_${key}_${i}" aria-label="${key==='principal'?'Pokok':key==='interest'?'Bunga':'Admin'} bulan ${i+1}" value="${rows?.[i]?.[key]??(key==='principal'?splitInstallment(principal,months,i):key==='admin'&&(f.elements.adminMode.value==='monthly'||i===0)?Number(f.elements.admin.value):0)}" required min="0" max="1000000000000" step="0.01"></td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
@@ -33,7 +34,7 @@ function installmentFields(plan={},card){
     <div data-bank-schedule hidden></div>
     <div class="installment-preview" data-install-preview></div>`;
 }
-function stockInstallmentFields(){return `<section class="form-section" data-stock-credit hidden>${selectField('Skema pembayaran kartu','creditMode','<option value="full">Tagihan biasa</option><option value="installment">Cicilan</option>')}<div data-stock-installment hidden>${installmentFields()}</div></section>`;}
+function stockInstallmentFields(){return `<section class="form-section" data-stock-credit hidden>${selectField('Skema pembayaran kartu','creditMode','<option value="full">Tagihan biasa</option><option value="installment">Cicilan</option>')}<div data-stock-installment hidden>${installmentFields()}<label class="purchase-finance-option"><input type="checkbox" name="autoPost" checked><span>Catat pembayaran otomatis saat jatuh tempo sebagai asumsi pemilik.</span></label></div></section>`;}
 function updateInstallmentFields(f){
   const stock=f.id==='stockForm',card=cards.find(c=>c.id===f.elements.payMethod?.value),active=!stock||(!!card&&f.elements.creditMode.value==='installment');
   if(stock){f.querySelector('[data-stock-credit]').hidden=!card;f.elements.creditMode.disabled=!card;f.querySelector('[data-stock-installment]').hidden=!active;}
@@ -49,9 +50,10 @@ function updateInstallmentFields(f){
   for(const name of ['admin','adminMode'])f.elements[name].disabled=!active||mode==='schedule';
   input.closest('label').querySelector('span').textContent=installmentInterestLabel(mode);
   input.max=mode==='flat'?'100':'1000000000000';
+  syncMoneyInputs(f);
   const preview=f.querySelector('[data-install-preview]');preview.innerHTML='';if(!active)return;
   try{
-    const c=cardCharges.find(c=>c.id===f.elements.chargeId?.value),principal=stock?Number(f.elements.qty.value)*Number(f.elements.cost.value):c?.amount;
+    const c=cardCharges.find(c=>c.id===f.elements.chargeId?.value),principal=stock?Number(f.elements.qty.value)*Number(f.elements.cost.value):Number(f.elements.principal?.value)||c?.amount;
     const plan=buildInstallment(principal,installmentFormData(f));
     const total=sum(plan.schedule,installmentRowTotal);
     preview.innerHTML=`<div class="estimate"><span>Pokok pembelian</span><strong>${installmentCurrency(principal)}</strong></div><div class="estimate"><span>Admin + bunga seluruh tenor</span><strong>${installmentCurrency(total-principal)}</strong></div><div class="estimate"><span>Total pembayaran terjadwal</span><strong>${installmentCurrency(total)}</strong></div><div class="estimate"><span>Tagihan pertama / ${cardDate(plan.schedule[0].dueDate)}</span><strong>${installmentCurrency(installmentRowTotal(plan.schedule[0]))}</strong></div>`;
@@ -64,26 +66,27 @@ function installmentForm(id){
   openDrawer(c.installment?'Edit cicilan':'Atur cicilan',`<form id="installmentForm" data-id="${esc(c.id)}">
     ${old?`<input type="hidden" name="chargeId" value="${esc(c.id)}"><div class="detail-lines"><strong>${esc(c.note)}</strong>${installmentBookLine(cardName(c.cardId),c.amount)}</div>`:selectField('Pembelian stok','chargeId',sources.map(row=>`<option value="${esc(row.id)}">${esc(cardName(row.cardId)+' / '+row.note)} / ${installmentCurrency(row.amount)}</option>`).join(''))}
     <section class="form-section" data-plan-fields>${installmentFields(c.installment,card)}</section>
+    <label class="purchase-finance-option"><input type="checkbox" name="autoPost" ${c.autoPost!==false?'checked':''}><span>Catat pembayaran otomatis saat jatuh tempo sebagai asumsi pemilik.</span></label>
     ${formFooter('Simpan cicilan')}</form>`,'CICILAN KARTU');
   updateInstallmentFields(el('installmentForm'));
 }
 function installmentView(){
   const plans=installmentCharges().filter(c=>(selectedCard==='all'||c.cardId===selectedCard)&&(installmentFilter==='all'||(installmentFilter==='paid')===c.installment.schedule.every(r=>installmentRemaining(c,r)<=0)));
-  const monthly=installmentUpcoming().filter(({charge,row})=>row.dueDate.startsWith(installmentMonth)&&(selectedCard==='all'||charge.cardId===selectedCard));
+  const monthly=installmentUpcoming().filter(({charge,row})=>row.dueDate?.startsWith(installmentMonth)&&(selectedCard==='all'||charge.cardId===selectedCard));
   return `<div class="section-heading"><h2>Cicilan pembelian</h2><div class="heading-actions"><button class="icon-button" data-install-action="export" title="Ekspor jadwal cicilan" aria-label="Ekspor jadwal cicilan">${icon('download')}</button><button class="button" data-install-action="add">${icon('plus')}Atur cicilan</button></div></div>
     <div class="table-toolbar"><div class="filters"><select id="paymentCard" aria-label="Filter kartu"><option value="all">Semua kartu</option>${cards.filter(c=>!c.legacyAllocation).map(c=>`<option value="${c.id}" ${c.id===selectedCard?'selected':''}>${esc(cardName(c.id))}</option>`).join('')}</select><select id="installmentFilter" aria-label="Status cicilan">${[['active','Belum lunas'],['paid','Lunas'],['all','Semua cicilan']].map(([id,label])=>`<option value="${id}" ${installmentFilter===id?'selected':''}>${label}</option>`).join('')}</select><input type="month" id="installmentMonth" aria-label="Bulan tagihan cicilan" value="${installmentMonth}"></div></div>
     <div class="module-banner"><div>${icon('calendar-clock')}<span>Sisa tagihan jatuh tempo ${esc(installmentMonth)} <strong>${installmentCurrency(sum(monthly,({charge,row})=>installmentRemaining(charge,row)))}</strong></span></div><span>${monthly.length} angsuran</span></div>
     <div class="module-table"><table><thead><tr><th>Pembelian</th><th>Kartu</th><th>Progres</th><th class="numeric">Sisa seluruh jadwal</th><th>Jatuh tempo berikutnya</th><th></th></tr></thead><tbody>${plans.map(c=>{
       const rows=c.installment.schedule,paid=rows.filter(r=>installmentRemaining(c,r)<=0).length,next=rows.find(r=>installmentRemaining(c,r)>0);
       return `<tr><td><strong>${esc(c.note)}</strong><div class="product-sub">Pokok ${installmentCurrency(c.amount)}</div></td><td>${esc(cardName(c.cardId))}</td><td>${paid} / ${rows.length} lunas</td><td class="numeric">${installmentCurrency(sum(rows,r=>installmentRemaining(c,r)))}</td><td>${next?cardDate(next.dueDate):'Lunas'}</td><td><button class="icon-button" data-install-action="detail" data-id="${c.id}" aria-label="Rincian cicilan ${esc(c.note)}" title="Rincian cicilan">${icon('arrow-up-right')}</button></td></tr>`;
-    }).join('')||'<tr><td colspan="6" class="empty">Belum ada cicilan pada filter ini.</td></tr>'}</tbody></table></div>`;
+    }).join('')||'<tr><td colspan="6" class="empty">Belum ada cicilan pada filter ini.</td></tr>'}</tbody></table></div>${installmentImportView()}`;
 }
 function installmentDetail(id){
   const c=cardCharges.find(c=>c.id===id&&c.installment);if(!c)return;
-  const rows=c.installment.schedule,paid=sum(cardPayments.filter(p=>p.installmentChargeId===id),p=>p.amount);
-  openDrawer(c.note,`<p>${esc(cardName(c.cardId))}</p><div class="detail-lines">${installmentBookLine('Pokok pembelian',c.amount)}${installmentBookLine('Admin seluruh tenor',sum(rows,r=>r.admin))}${installmentBookLine('Bunga seluruh tenor',sum(rows,r=>r.interest))}${installmentBookLine('Pembayaran tercatat',paid)}${installmentBookLine('Sisa seluruh jadwal',sum(rows,r=>installmentRemaining(c,r)),true)}</div>
-    <div class="section-heading"><h3>Jadwal ${rows.length} bulan</h3><button class="icon-button" data-install-action="edit" data-id="${id}" ${paid>0?'disabled':''} title="Edit cicilan" aria-label="Edit cicilan">${icon('pencil')}</button><button class="icon-button" data-install-action="remove" data-id="${id}" ${paid>0?'disabled':''} title="Hapus jadwal cicilan" aria-label="Hapus jadwal cicilan">${icon('trash-2')}</button></div>
-    <div class="module-table installment-schedule"><table><thead><tr><th>Ke</th><th>Cetak</th><th>Jatuh tempo</th><th>Pokok</th><th>Bunga</th><th>Admin</th><th>Sisa</th><th></th></tr></thead><tbody>${rows.map(r=>{const remaining=installmentRemaining(c,r);return `<tr><td>${r.number}</td><td>${cardDate(r.statementDate)}</td><td>${cardDate(r.dueDate)}</td><td>${installmentCurrency(r.principal)}</td><td>${installmentCurrency(r.interest)}</td><td>${installmentCurrency(r.admin)}</td><td>${remaining?installmentCurrency(remaining):'<span class="badge">Lunas</span>'}</td><td><button class="icon-button" data-install-action="pay" data-id="${id}" data-number="${r.number}" ${remaining<=0||r.statementDate>TODAY?'disabled':''} title="Catat pembayaran angsuran ${r.number}" aria-label="Catat pembayaran angsuran ${r.number}">${icon('wallet')}</button></td></tr>`;}).join('')}</tbody></table></div>`,'CICILAN KARTU');
+  const rows=c.installment.schedule,openingPaid=sum(rows.slice(0,c.installment.opening?.paidMonths||0),installmentRowTotal),posted=sum(cardPayments.filter(p=>p.installmentChargeId===id),p=>p.amount),locked=!!c.installment.opening||posted>0;
+  openDrawer(c.note,`<p>${esc(cardName(c.cardId))}</p><div class="detail-lines">${installmentBookLine('Pokok pembelian',c.amount)}${installmentBookLine('Admin seluruh tenor',sum(rows,r=>r.admin))}${installmentBookLine('Bunga seluruh tenor',sum(rows,r=>r.interest))}${openingPaid?installmentBookLine('Lunas sebelum '+cardDate(c.installment.opening.asOf),openingPaid):''}${installmentBookLine('Pembayaran tercatat setelah saldo awal',posted)}${installmentBookLine('Sisa seluruh jadwal',sum(rows,r=>installmentRemaining(c,r)),true)}</div>${c.autoPost?'<div class="storage-notice"><strong>Pencatatan otomatis aktif</strong><p>Pembayaran jatuh tempo dicatat sebagai asumsi pemilik, bukan konfirmasi transaksi bank.</p></div>':''}
+    <div class="section-heading"><h3>Jadwal ${rows.length} bulan</h3><button class="icon-button" data-install-action="edit" data-id="${id}" ${locked?'disabled':''} title="Edit cicilan" aria-label="Edit cicilan">${icon('pencil')}</button><button class="icon-button" data-install-action="remove" data-id="${id}" ${locked?'disabled':''} title="Hapus jadwal cicilan" aria-label="Hapus jadwal cicilan">${icon('trash-2')}</button></div>
+    <div class="module-table installment-schedule"><table><thead><tr><th>Ke</th><th>Cetak</th><th>Jatuh tempo</th><th>Pokok</th><th>Bunga</th><th>Admin</th><th>Sisa</th><th></th></tr></thead><tbody>${rows.map(r=>{const remaining=installmentRemaining(c,r),historical=!r.statementDate;return `<tr><td>${r.number}</td><td>${historical?'Saldo awal':cardDate(r.statementDate)}</td><td>${historical?'Sudah dibayar':cardDate(r.dueDate)}</td><td>${installmentCurrency(r.principal)}</td><td>${installmentCurrency(r.interest)}</td><td>${installmentCurrency(r.admin)}</td><td>${remaining?installmentCurrency(remaining):'<span class="badge">Lunas</span>'}</td><td><button class="icon-button" data-install-action="pay" data-id="${id}" data-number="${r.number}" ${historical||remaining<=0||r.statementDate>TODAY?'disabled':''} title="Catat pembayaran angsuran ${r.number}" aria-label="Catat pembayaran angsuran ${r.number}">${icon('wallet')}</button></td></tr>`;}).join('')}</tbody></table></div>`,'CICILAN KARTU');
 }
 function installmentPaymentForm(chargeId,number,paymentId){
   const old=cardPayments.find(p=>p.id===paymentId),c=cardCharges.find(c=>c.id===(old?.installmentChargeId||chargeId)),row=c?.installment?.schedule.find(r=>r.number===Number(old?.installmentNumber||number));

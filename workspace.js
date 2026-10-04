@@ -7,12 +7,12 @@ function emptyWorkspace(){
   business={name:'Cornetto Shop',owner:'Pemilik',categories:['Handphone','Elektronik'],conditions:['Baru','Bekas'],warranties:['Resmi','Distributor','Tanpa garansi']};
   taxProfile={type:'person',eligible:false,pkp:false,inclusive:true,rate:0.5,verified:false};taxAdjustments={};inputVat={};syncFees();
 }
-function snapshot(){return {app:'cornetto-workspace',version:3,exportedAt:new Date().toISOString(),inventory,sales,expenses,ledger,channels,suppliers,cards,cardCharges,cardPayments,taxPayments,business,taxProfile,taxAdjustments,inputVat,migration,legacyArchive,cardGroups};}
+function snapshot(){return {app:'cornetto-workspace',version:4,exportedAt:new Date().toISOString(),inventory,sales,expenses,ledger,channels,suppliers,cards,cardCharges,cardPayments,taxPayments,business,taxProfile,taxAdjustments,inputVat,migration,legacyArchive,cardGroups};}
 function applyState(d){({inventory,sales,expenses,ledger,channels,suppliers,cards,cardCharges,cardPayments,taxPayments,business,taxProfile,taxAdjustments,inputVat,migration,legacyArchive}=d);cardGroups=d.cardGroups||[];inventory.forEach(p=>{if(p.date)p.age=Math.max(0,Math.floor((Date.parse(TODAY+'T12:00:00Z')-Date.parse(p.date+'T12:00:00Z'))/86400000));});syncFees();}
 function openDatabase(){return new Promise((resolve,reject)=>{const r=indexedDB.open('cornetto-workspace-private-v1',1);r.onupgradeneeded=()=>r.result.createObjectStore('workspace');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);r.onblocked=()=>reject(Error('Tutup tab workspace lainnya lalu muat ulang.'));});}
 function readStored(key){return new Promise((resolve,reject)=>{const r=db.transaction('workspace').objectStore('workspace').get(key);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});}
 function persist(d,recovery=false,syncOverride){return new Promise((resolve,reject)=>{
-  d={...d,version:3,cardGroups:d.cardGroups||[]};
+  d={...d,version:4,cardGroups:d.cardGroups||[]};
   const expectedRevision=revision,tx=db.transaction('workspace','readwrite'),store=tx.objectStore('workspace'),r=store.get('current');let next;
   r.onsuccess=()=>{const prev=r.result;if((prev?.revision||0)!==expectedRevision){tx.abort();return;}next=expectedRevision+1;if(recovery&&prev)store.put(prev,'before-import');const sync=syncOverride!==undefined?syncOverride:prev?.sync?{...prev.sync,dirty:true}:null;store.put({revision:next,data:d,sync},'current');};
   tx.oncomplete=()=>{revision=next;window.dispatchEvent(new Event('cornetto:saved'));resolve();};tx.onerror=()=>reject(tx.error||Error('Penyimpanan gagal.'));tx.onabort=()=>reject(Error('Data berubah di tab lain atau penyimpanan gagal. Unduh backup lalu muat ulang.'));
@@ -27,9 +27,9 @@ function updateStorageBadge(){
   if(!el('saveStatus'))return;
   el('saveStatus').textContent=storageFailed?'GAGAL DISIMPAN - unduh backup sebelum menutup':savePending?'Menyimpan...':'Tersimpan di perangkat ini';
   el('saveStatus').classList.toggle('red-text',storageFailed);
-  el('storageBadge').textContent=storageFailed?'Penyimpanan bermasalah':'Lokal / cloud belum aktif';
+  
   const cloud=window.cornettoCloudStatus?.();
-  if(cloud){if(!storageFailed&&!savePending)el('saveStatus').textContent=cloud.message;el('storageBadge').textContent=cloud.summary;el('cloudBadge').textContent=cloud.label;el('cloudSummary').textContent=cloud.summary;}
+  if(cloud){if(!storageFailed&&!savePending)el('saveStatus').textContent=cloud.message;el('cloudBadge').textContent=cloud.label;el('cloudSummary').textContent=cloud.summary;}
 }
 const periodOptions=[['today','Hari ini'],['yesterday','Kemarin'],['week','7 hari terakhir'],['30days','30 hari terakhir'],['month','Bulan ini'],['lastMonth','Bulan lalu'],['year','Tahun ini'],['all','Semua tanggal']];
 function periodRange(key=period,today=TODAY){
@@ -59,7 +59,7 @@ moduleViews.data=dataView;
 const baseBusinessSettings=businessSettings;
 businessSettings=function(){return baseBusinessSettings().replace('data-action="demo-backup"','data-work="backup"');};
 const baseRender=render;
-render=function(){baseRender();if(['dashboard','sales','books'].includes(view)&&sales.some(s=>s.status==='unknown'))el('main').insertAdjacentHTML('afterbegin',`<div class="storage-notice"><strong>${sales.filter(s=>s.status==='unknown').length} status pencairan belum diketahui</strong><p>Angka dana diterima dan belum cair belum mencakup transaksi tersebut.</p></div>`);if(view==='stock'&&inventory.some(p=>p.qty<0))el('main').insertAdjacentHTML('afterbegin','<div class="storage-notice red-text">Ada stok minus dari backup lama. Jumlah minus tetap ditampilkan; nilai persediaan hanya menghitung stok positif.</div>');if(view==='books')el('main').insertAdjacentHTML('beforeend',ledgerView());if(view==='tax'&&!taxProfile.verified)el('main').insertAdjacentHTML('afterbegin','<div class="storage-notice">Profil pajak belum diverifikasi. Aktifkan asumsi hanya setelah memastikan kelayakan dan kelengkapan omzet.</div>');refreshIcons();};
+render=function(){baseRender();if(['dashboard','sales','books'].includes(view)&&sales.some(s=>s.status==='unknown'))el('main').insertAdjacentHTML('afterbegin',`<div class="storage-notice"><strong>${sales.filter(s=>s.status==='unknown').length} status pencairan belum diketahui</strong><p>Angka dana diterima dan belum cair belum mencakup transaksi tersebut.</p></div>`);if(view==='stock'&&inventory.some(p=>p.qty<0))el('main').insertAdjacentHTML('afterbegin','<div class="storage-notice red-text">Ada stok minus dari backup lama. Jumlah minus tetap ditampilkan; nilai persediaan hanya menghitung stok positif.</div>');if(view==='tax'&&!taxProfile.verified)el('main').insertAdjacentHTML('afterbegin','<div class="storage-notice">Profil pajak belum diverifikasi. Aktifkan asumsi hanya setelah memastikan kelayakan dan kelengkapan omzet.</div>');refreshIcons();};
 function ledgerView(){return `<section class="book-credit-position"><div class="section-heading"><h2>Modal & pinjaman</h2><button class="button" data-work="add-ledger">${icon('plus')}Catat mutasi</button></div><div class="table-scroll"><table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Keterangan</th><th class="numeric">Nominal</th></tr></thead><tbody>${ledger.filter(r=>inPeriod(r.date)).map(r=>`<tr><td>${date(r.date)}</td><td>${esc(({modal:'Setoran modal',prive:'Prive',aset:'Pembelian aset',pinjam:'Penerimaan pinjaman',bayar:'Pembayaran pinjaman'})[r.type]||r.type)}</td><td>${esc(r.note)}</td><td class="numeric">${money(r.amount)}</td></tr>`).join('')||'<tr><td colspan="4" class="empty">Belum ada mutasi dalam periode ini.</td></tr>'}</tbody></table></div></section>`;}
 const baseDetail=detail;
 detail=function(kind,id){baseDetail(kind,id);const record=kind==='stock'?productById(id):sales.find(s=>s.id===id);el('drawerBody').insertAdjacentHTML('beforeend',`<div class="detail-extra">${record.legacyId?`<p>ID lama: ${esc(record.legacyId)}</p>`:''}${record.imei?`<p>IMEI: ${esc(record.imei)}</p>`:''}${record.notes?`<p>${esc(record.notes)}</p>`:''}${record.invoice?`<button class="button" data-work="invoice" data-kind="${kind}" data-id="${id}">${icon('file-image')}Invoice</button>`:''}</div>`);refreshIcons();};
@@ -75,7 +75,7 @@ drawChart=function(){
   c.onmousemove=e=>{const i=Math.max(0,Math.min(entries.length-1,Math.round((e.offsetX-40)/(w-58)*(entries.length-1))));el('chartTooltip').hidden=false;el('chartTooltip').textContent=entries[i][0]+' / '+money(values[i]*1e6);};c.onmouseleave=()=>{el('chartTooltip').hidden=true;};
 };
 function validateSnapshot(d){
-  if(d?.app!=='cornetto-workspace'||![1,2,3].includes(d.version))throw Error('Format backup workspace tidak dikenali.');
+  if(d?.app!=='cornetto-workspace'||![1,2,3,4].includes(d.version))throw Error('Format backup workspace tidak dikenali.');
   for(const k of stateKeys.slice(0,10))if(!Array.isArray(d[k]))throw Error('Daftar '+k+' tidak valid.');
   for(const k of ['business','taxProfile','taxAdjustments','inputVat'])if(!d[k]||typeof d[k]!=='object')throw Error('Data '+k+' tidak lengkap.');
   for(const k of ['inventory','sales','ledger','channels','suppliers','cards','cardCharges','cardPayments','taxPayments']){const ids=new Set();for(const r of d[k]){if(!/^[a-zA-Z0-9_-]+$/.test(r.id)||ids.has(r.id))throw Error('ID tidak valid/duplikat di '+k);ids.add(r.id);if(r.date&&(!/^\d{4}-\d{2}-\d{2}$/.test(r.date)||!Number.isFinite(Date.parse(r.date))))throw Error('Tanggal tidak valid.');}}
@@ -95,6 +95,19 @@ function validateSnapshot(d){
   for(const key of ['categories','conditions','warranties'])if(!Array.isArray(d.business[key])||!d.business[key].every(x=>typeof x==='string'))throw Error('Pilihan produk tidak valid.');
   if(!validAmount(d.taxProfile.rate)||d.taxProfile.rate>100)throw Error('Tarif tidak valid.');
   if(d.migration&&(!Array.isArray(d.migration.warnings)||!d.migration.warnings.every(w=>typeof w==='string')))throw Error('Laporan impor tidak valid.');
+  const batch=d.migration?.installmentImport;
+  if(batch){
+    if(d.version<4||typeof batch!=='object'||!CardSchedule.validDate(batch.asOf)||batch.asOf>TODAY||!Array.isArray(batch.rows)||batch.rows.length>1000||typeof batch.fingerprint!=='string'||!/^[a-f0-9]{64}$/i.test(batch.fingerprint))throw Error('Daftar impor cicilan tidak valid.');
+    const ids=new Set(),numbers=new Set();
+    for(const r of batch.rows){
+      if(!r||!/^[a-zA-Z0-9_-]+$/.test(r.id)||ids.has(r.id)||!Number.isInteger(r.row)||r.row<1||numbers.has(r.row)||typeof r.description!=='string'||r.description.length>200||typeof r.cardLabel!=='string'||r.cardLabel.length>120||!CardSchedule.validDate(r.date)||r.date>TODAY||r.asOf!==batch.asOf||!installmentMoney(r.principal)||r.principal<=0||!Number.isInteger(r.months)||r.months<1||r.months>36||!Number.isInteger(r.paidMonths)||r.paidMonths<0||r.paidMonths>r.months||!installmentMoney(r.rate)||r.rate>100||!['pending','active'].includes(r.status))throw Error('Baris impor cicilan tidak valid.');
+      ids.add(r.id);numbers.add(r.row);
+      if(r.status==='active'){
+        const charge=d.cardCharges.find(c=>c.id===r.chargeId&&c.importRowId===r.id&&c.cardId===r.cardId&&c.installment?.opening?.asOf===batch.asOf);
+        if(!charge||!['stock','loan'].includes(r.kind)||(r.kind==='stock'&&!d.inventory.some(p=>p.id===r.productId))||(r.kind==='loan'&&!d.ledger.some(x=>x.chargeId===charge.id&&x.type==='pinjam')))throw Error('Hasil pencocokan cicilan tidak lengkap.');
+      }
+    }
+  }
   validateInstallments(d);
   return d;
 }

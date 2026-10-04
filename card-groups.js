@@ -16,7 +16,7 @@ function availableCardLimit(c){const g=cardGroup(c);return g?g.limit-groupBalanc
 function totalAvailableCardLimit(){return sum(cards.filter(c=>c.active&&!c.groupId),c=>Math.max(0,availableCardLimit(c)))+sum(cardGroups.filter(g=>cards.some(c=>c.groupId===g.id&&c.active)),g=>Math.max(0,g.limit-groupBalance(g.id)));}
 function cardLimitFields(c){
   const shared=!!c?.groupId,newGroup=shared&&!cardGroups.length;
-  return `<fieldset class="limit-choice"><legend>Jenis limit</legend><label><input type="radio" name="limitMode" value="own" ${shared?'':'checked'}>Limit sendiri</label><label><input type="radio" name="limitMode" value="shared" ${shared?'checked':''}>Limit gabungan</label></fieldset>
+  return `<fieldset class="limit-choice"><legend>Jenis limit</legend><label><input type="radio" name="limitMode" value="own" ${shared?'':'checked'}>Limit terpisah</label><label><input type="radio" name="limitMode" value="shared" ${shared?'checked':''}>Limit gabungan</label></fieldset>
     <div data-own-limit ${shared?'hidden':''}>${field('Limit kartu (Rp)','limit','number',c?.limit||'',shared?'disabled':'required min="1" step="1"')}</div>
     <div data-shared-limit ${shared?'':'hidden'}>
       ${selectField('Grup limit','groupId','<option value="">Pilih grup</option>'+cardGroups.map(g=>`<option value="${g.id}" ${c?.groupId===g.id?'selected':''}>${esc(g.name)} / ${money(g.limit)}</option>`).join('')+`<option value="__new" ${newGroup?'selected':''}>+ Grup limit baru</option>`)}
@@ -52,12 +52,13 @@ const expandedCardSections=new Set();
 function cardSection(key,title,body){return `<details class="card-collapse" data-card-section="${esc(key)}" ${expandedCardSections.has(key)?'open':''}><summary><span>${title}</span>${icon('chevron-down')}</summary><div class="card-collapse-body">${body}</div></details>`;}
 document.addEventListener('toggle',e=>{const key=e.target.dataset?.cardSection;if(key){if(e.target.open)expandedCardSections.add(key);else expandedCardSections.delete(key);}},true);
 function sharedCardsView(){
-  const ungrouped=cards.filter(c=>!c.groupId);
-  const grouped=cardGroups.map(g=>{
-    const members=cards.filter(c=>c.groupId===g.id),legacy=members.filter(c=>c.legacyAllocation),balance=groupBalance(g.id);
+  const byBank=(a,b)=>(a.bank||a.name).localeCompare(b.bank||b.name,'id',{sensitivity:'base'})||a.name.localeCompare(b.name,'id');
+  const ungrouped=cards.filter(c=>!c.groupId).sort(byBank);
+  const grouped=[...cardGroups].sort(byBank).map(g=>{
+    const members=cards.filter(c=>c.groupId===g.id).sort(byBank),legacy=members.filter(c=>c.legacyAllocation),balance=groupBalance(g.id);
     return `<section class="shared-limit-group"><div class="section-heading"><div><h2>${esc(g.name)}</h2><p>${members.filter(c=>!c.legacyAllocation).length} kartu / limit gabungan</p></div><button class="icon-button" data-group-action="edit" data-id="${g.id}" title="Edit limit ${esc(g.name)}" aria-label="Edit limit ${esc(g.name)}">${icon('pencil')}</button></div><div class="shared-limit-totals"><div><span>Limit bersama</span><strong>${money(g.limit)}</strong></div><div><span>Total utang grup</span><strong>${money(balance)}</strong></div><div><span>Sisa limit bersama</span><strong class="${balance>g.limit?'red-text':''}">${money(g.limit-balance)}</strong></div></div>${cardSection(g.id,'Rincian '+members.filter(c=>!c.legacyAllocation).length+' kartu',`${legacy.map(c=>`<div class="shared-legacy"><div><strong>Transaksi lama: kartu belum ditentukan</strong><p>${esc(g.name)} / utang ${money(cardBalance(c.id))} / tetap termasuk total grup</p></div><button class="button" data-action="card-detail" data-id="${c.id}">Rincian ${icon('arrow-up-right')}</button></div>`).join('')}<div class="credit-grid">${members.filter(c=>!c.legacyAllocation).map(creditTile).join('')}</div>`)}</section>`;
   }).join('');
-  return `<div class="section-heading"><h2>Fasilitas kartu</h2><button class="button" data-group-action="manage">${icon('settings-2')}Grup limit</button></div>`+cardSection('shared','Kartu dengan limit gabungan / '+cardGroups.length+' grup',grouped||emptyState('Belum ada grup limit.'))+cardSection('independent','Kartu dengan limit sendiri / '+ungrouped.length,`<div class="credit-grid">${ungrouped.map(creditTile).join('')}</div>`);
+  return `<div class="section-heading"><h2>Fasilitas kartu</h2><button class="button" data-group-action="manage">${icon('settings-2')}Grup limit</button></div>`+cardSection('shared','Kartu dengan limit gabungan',grouped||emptyState('Belum ada grup limit.'))+cardSection('independent','Kartu dengan limit terpisah',`<div class="credit-grid">${ungrouped.map(creditTile).join('')}</div>`);
 }
 function sharedGroupManager(){
   const sources=cards.filter(c=>!c.groupId);
