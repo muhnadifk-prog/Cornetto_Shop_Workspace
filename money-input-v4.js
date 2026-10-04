@@ -94,3 +94,4 @@ document.addEventListener('keydown',e=>{
   if(/^[0-9.+*/=\-%]$/.test(key)||['back','clear'].includes(key)){e.preventDefault();calculatorKey(key==='%'?'percent':key);calculatorRefresh();}
 });
 
+
