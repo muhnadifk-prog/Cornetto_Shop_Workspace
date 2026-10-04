@@ -13,8 +13,12 @@ function parseMoneyInput(text){
 function moneyField(label,name,value,extra){
   return `<label class="form-field"><span>${label}</span><input type="hidden" name="${name}" value="${esc(value)}" ${extra}><input type="text" inputmode="decimal" autocomplete="off" data-money="${name}" value="${esc(moneyInputText(value))}" ${extra}></label>`;
 }
+function linkedMoneyInput(input){
+  const name=input.dataset.money;
+  return name&&input.form?.elements.namedItem(name);
+}
 function validateMoneyInput(input){
-  const raw=input.form?.elements[input.dataset.money];if(!raw)return;
+  const raw=linkedMoneyInput(input);if(!raw)return;
   input.disabled=raw.disabled;
   const value=parseMoneyInput(input.value),n=Number(value);
   const invalid=value===null||(value!==''&&((raw.hasAttribute('min')&&n<Number(raw.min||raw.getAttribute('min')))||(raw.hasAttribute('max')&&n>Number(raw.max||raw.getAttribute('max')))));
@@ -22,7 +26,7 @@ function validateMoneyInput(input){
   raw.value=value===null?'':value;
 }
 function syncMoneyInputs(root=document){
-  root.querySelectorAll('[data-money]').forEach(input=>{const raw=input.form?.elements[input.dataset.money];if(raw&&document.activeElement!==input){input.value=moneyInputText(raw.value);input.disabled=raw.disabled;input.setCustomValidity('');}});
+  root.querySelectorAll('[data-money]').forEach(input=>{const raw=linkedMoneyInput(input);if(raw&&document.activeElement!==input){input.value=moneyInputText(raw.value);input.disabled=raw.disabled;input.setCustomValidity('');}});
 }
 document.addEventListener('input',e=>{
   const input=e.target;if(!input.dataset?.money)return;
