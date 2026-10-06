@@ -1,0 +1,52 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const ctx={console,Date,structuredClone,Intl,window:{addEventListener(){}},document:{addEventListener(){},getElementById(){return {addEventListener(){}};}},location:{hash:''}};
+vm.createContext(ctx);
+for(const file of ['card-schedule.js','card-groups.js','cornetto-modules.js','cornetto.js','money-input.js','sale-edit.js','stock-edit.js','installments.js','installments-ui.js','purchase-finance.js','installment-import.js','books-ui.js','workspace.js']){
+  let code=fs.readFileSync(path.join(__dirname,'..',file),'utf8');
+  if(file==='workspace.js')code=code.replace(/startWorkspace\(\);\s*$/,'');
+  vm.runInContext(code,ctx,{filename:file});
+}
+const run=s=>vm.runInContext(s,ctx),plain=s=>JSON.parse(JSON.stringify(run(s)));
+run(`emptyWorkspace();suppliers=[{id:'supplier-test',name:'Supplier',active:true}];
+inventory=[{id:'p',name:'Product',variant:'Black',brand:'Apple',sku:'CS-001',qty:2,purchasedQty:3,cost:1075000,price:1250000,date:'2026-01-01',age:1,supplier:'Supplier',supplierId:'supplier-test',payMethod:'cash',category:'Handphone',condition:'Baru',warranty:'Resmi',imei:'123',notes:'Keep',invoice:'private-attachment',legacyId:'old-1'}];
+sales=[{id:'s',productId:'p',qty:1,cost:1000000,price:1300000,fee:10000,shipping:0,date:'2026-02-01',channel:'Toko',buyer:'Buyer',status:'paid'}];
+var initial=snapshot(),baseline=stockBaseline(initial,'p'),draft={...inventory[0],qty:'4',cost:'1100000',price:'1400000'};
+var changed=prepareStockEdit(initial,'p',draft,baseline);validateSnapshot(changed);`);
+assert.equal(run('changed.inventory[0].qty'),4);
+assert.equal(run('changed.inventory[0].purchasedQty'),5);
+assert.equal(run('changed.inventory[0].cost'),1100000);
+assert.deepEqual(plain('changed.sales'),plain('initial.sales'));
+assert.equal(run('changed.inventory[0].invoice'),'private-attachment');
+assert.equal(run('changed.inventory[0].legacyId'),'old-1');
+assert.equal(run('initial.inventory[0].qty'),2);
+for(const draft of ["{...draft,qty:'-1'}","{...draft,cost:'-1'}","{...draft,price:'NaN'}","{...draft,name:' '}" ,"{...draft,date:'2026-02-30'}","{...draft,date:'2026-03-01'}","{...draft,supplierId:'missing'}"]){
+  assert.throws(()=>run(`prepareStockEdit(initial,'p',${draft},baseline)`));
+}
+assert.throws(()=>run("prepareStockDelete(initial,'p',baseline)"),/penjualan/);
+run("var stale=structuredClone(initial);stale.sales[0].qty=2");
+assert.throws(()=>run("prepareStockEdit(stale,'p',draft,baseline)"),/berubah/);
+run("var negative=structuredClone(initial);negative.inventory[0].qty=-1;negative.inventory[0].purchasedQty=0");
+run("var corrected=prepareStockEdit(negative,'p',{...draft,qty:'0'},stockBaseline(negative,'p'))");
+assert.equal(run('corrected.inventory[0].purchasedQty'),1);
+assert.equal(run('corrected.inventory[0].qty'),0);
+run("var credit=structuredClone(initial);credit.cardCharges=[{id:'c',productIds:['p'],cardId:'cc',amount:3000000,installment:{schedule:[]}}]");
+assert.throws(()=>run("prepareStockEdit(credit,'p',draft,stockBaseline(credit,'p'))"),/terkunci/);
+run("var creditEdit=prepareStockEdit(credit,'p',{...credit.inventory[0],name:'New name',price:'1500000'},stockBaseline(credit,'p'))");
+assert.deepEqual(plain('creditEdit.cardCharges'),plain('credit.cardCharges'));
+assert.deepEqual(plain('creditEdit.sales'),plain('credit.sales'));
+run("credit.sales=[]");
+assert.throws(()=>run("prepareStockDelete(credit,'p',stockBaseline(credit,'p'))"),/pembiayaan/);
+run("var removable=structuredClone(initial);removable.sales=[];removable.inventory[0].qty=removable.inventory[0].purchasedQty;var removeBaseline=stockBaseline(removable,'p');var deleted=prepareStockDelete(removable,'p',removeBaseline)");
+assert.equal(run('deleted.inventory.length'),0);
+assert.equal(run('removable.inventory.length'),1);
+run("removable.cardCharges.push({id:'late',productId:'p'})");
+assert.throws(()=>run("prepareStockDelete(removable,'p',removeBaseline)"),/berubah/);
+run("var tracked=structuredClone(initial);tracked.sales=[];tracked.migration={installmentImport:{rows:[{productId:'p',status:'active'}]}};");
+assert.throws(()=>run("prepareStockDelete(tracked,'p',stockBaseline(tracked,'p'))"),/pembiayaan/);
+run("tracked.migration=null;tracked.ledger=[{productId:'p'}]");
+assert.throws(()=>run("prepareStockDelete(tracked,'p',stockBaseline(tracked,'p'))"),/pembiayaan/);
+run("inventory=[{sku:'CS-001'},{sku:'CS-003'}]");
+assert.equal(run('nextStockSku()'),'CS-004');
+assert.ok(run("stockTable(initial.inventory).includes('data-action=\"edit-stock\"')"));
+assert.ok(run("stockTable(initial.inventory).includes('data-action=\"delete-stock\"')"));
+console.log('PASS: edit deltas, historical HPP preserved, metadata retained, validation, negative-stock correction, linked deletion guards, stale-edit/delete protection, pure state changes and unique SKU after deletion.');
