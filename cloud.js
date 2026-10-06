@@ -1,7 +1,8 @@
 'use strict';
 (function(){
   const TABLE='cornetto_workspace_v1', OUTBOX='cloud-outbox-v1';
-  let client,user=null,localSync=null,mode='local',message='Tersimpan di perangkat ini',busy=false,timer,remoteChoice=null,booted=false,sessionVersion=0;
+  let client,user=null,localSync=null,mode='local',message='Tersimpan di perangkat ini',busy=false,timer,remoteChoice=null,booted=false,sessionVersion=0,checking=null,lastAutoCheck=0;
+  const AUTO_CHECK_MS=120000;
   const dialog=document.createElement('dialog');dialog.id='cloudDialog';dialog.setAttribute('aria-label','Akun dan sinkronisasi cloud');document.body.append(dialog);
   const hasData=d=>!!d&&(d.inventory.length+d.sales.length+d.expenses.length+d.ledger.length+d.cards.length>0);
   const locked=()=>!!localSync?.ownerId&&user?.id!==localSync.ownerId;
@@ -64,7 +65,15 @@
     return flushUnlocked();
   }
   function schedule(){clearTimeout(timer);timer=setTimeout(()=>{flush().catch(()=>status('pending','Sinkron tertunda; data tetap lokal.'));},700);}
-  async function check(){
+  function check(){
+    if(checking)return checking;
+    checking=checkUnlocked().finally(()=>{checking=null;});return checking;
+  }
+  function autoCheck(){
+    if(!booted||document.hidden||!navigator.onLine||Date.now()-lastAutoCheck<AUTO_CHECK_MS)return;
+    lastAutoCheck=Date.now();check().catch(()=>{});
+  }
+  async function checkUnlocked(){
     if(!user||busy||locked())return;
     await saveQueue;const current=await readStored('current');localSync=current?.sync||null;
     if(localSync?.ownerId!==user.id){await connect();return;}
@@ -80,11 +89,11 @@
     if(!user){status('local',localSync?.ownerId?'Masuk untuk membuka workspace cloud':'Tersimpan lokal / belum masuk cloud');if(locked())showAccount();return;}
     if(locked()){status('account','Akun berbeda dari pemilik data di perangkat ini.');showAccount();return;}
     try{
-      status('loading','Memeriksa data cloud...');const remote=await getRemote();if(version!==sessionVersion)return;
+      status('loading','Memeriksa data cloud...');const remote=await getRemote(!!localSync?.ownerId);if(version!==sessionVersion)return;
       if(localSync?.ownerId){
         if(stored.sync.dirty||await readStored(OUTBOX)){status('pending','Memeriksa antrean lokal');await flush();}
         else if(remote?.revision===stored.sync.baseRevision)status('synced','Tersimpan di cloud');
-        else if(remote)await acceptRemote(remote);
+        else if(remote)await acceptRemote(await getRemote());
         else status('conflict','Data cloud belum ditemukan. Salinan lokal dipertahankan.');
       }else if(remote){
         if(!hasData(stored?.data)){await acceptRemote(remote);close();}
@@ -127,8 +136,9 @@
     finally{if(b.isConnected)b.disabled=false;}
   });
   window.addEventListener('cornetto:saved',()=>{if(booted)schedule();});
-  window.addEventListener('online',()=>{if(booted)check().catch(()=>{});});
-  window.addEventListener('focus',()=>{if(booted)check().catch(()=>{});});
+  window.addEventListener('online',()=>{lastAutoCheck=0;autoCheck();});
+  window.addEventListener('focus',autoCheck);
+  document.addEventListener('visibilitychange',autoCheck);
   window.addEventListener('beforeunload',e=>{if(localSync?.dirty||busy){e.preventDefault();e.returnValue='';}});
   async function start(){
     if(booted||!db||storageFailed)return;booted=true;
@@ -136,7 +146,7 @@
     client=window.supabase.createClient(config.url,config.publishableKey,{auth:{storageKey:'cornetto-workspace-auth-v1',persistSession:true,autoRefreshToken:true,detectSessionInUrl:false},global:{fetch:(url,options)=>fetch(url,{...options,signal:options?.signal||AbortSignal.timeout(25000)})}});
     client.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_OUT'){setTimeout(()=>{user=null;sessionVersion++;refresh();status('local','Sesi berakhir. Masuk kembali.');if(locked())showAccount();},0);}else if(event==='TOKEN_REFRESHED')user=session?.user||null;});
     const {data,error}=await client.auth.getSession();user=error?null:data.session?.user||null;await connect();
-    setInterval(()=>{if(!document.hidden)check().catch(()=>{});},30000);
+    lastAutoCheck=Date.now();setInterval(autoCheck,AUTO_CHECK_MS);
   }
   if(window.cornettoReady)start().catch(()=>status('pending','Cloud belum dapat dimuat.'));else window.addEventListener('cornetto:ready',()=>start().catch(()=>status('pending','Cloud belum dapat dimuat.')),{once:true});
 })();

@@ -13,7 +13,7 @@ function nearestCardDueLabel(active){
 }
 function cardLimit(c){return cardGroup(c)?.limit??c.limit;}
 function availableCardLimit(c){const g=cardGroup(c);return g?g.limit-groupBalance(g.id):c.limit-cardBalance(c.id);}
-function totalAvailableCardLimit(){return sum(cards.filter(c=>c.active&&!c.groupId),c=>Math.max(0,availableCardLimit(c)))+sum(cardGroups.filter(g=>cards.some(c=>c.groupId===g.id&&c.active)),g=>Math.max(0,g.limit-groupBalance(g.id)));}
+function totalAvailableCardLimit(){return sum(cards.filter(c=>c.active&&!c.groupId),c=>availableCardLimit(c))+sum(cardGroups.filter(g=>cards.some(c=>c.groupId===g.id&&c.active)),g=>g.limit-groupBalance(g.id));}
 function cardLimitFields(c){
   const shared=!!c?.groupId,newGroup=shared&&!cardGroups.length;
   return `<fieldset class="limit-choice"><legend>Jenis limit</legend><label><input type="radio" name="limitMode" value="own" ${shared?'':'checked'}>Limit terpisah</label><label><input type="radio" name="limitMode" value="shared" ${shared?'checked':''}>Limit gabungan</label></fieldset>
@@ -37,9 +37,8 @@ function commitCardSettings(id,d){
   const schedule={dueMode:d.dueMode,statementDay:Number(d.statementDay),dueAfterDays:Number(d.dueAfterDays)};
   if((id&&!existing)||!['own','shared'].includes(d.limitMode)||!name||name.length>60||!bank||bank.length>40||!/^([0-9]{4})?$/.test(d.last4||'')||!/^#[0-9a-f]{6}$/i.test(d.color||'')||cards.some(c=>c.id!==id&&c.name.toLowerCase()===name.toLowerCase()&&c.bank.toLowerCase()===bank.toLowerCase()))throw Error('Periksa nama kartu, bank, 4 digit terakhir, dan warna. Nama kartu pada bank yang sama harus unik.');
   if(shared&&!fresh&&!group)throw Error('Pilih grup limit atau buat grup baru.');
-  if(!shared&&(!validAmount(limit)||limit<=0||limit<cardBalance(id)))throw Error('Limit kartu tidak boleh kurang dari utang berjalan.');
-  if(fresh&&(!groupName||groupName.length>60||cardGroups.some(g=>g.name.toLowerCase()===groupName.toLowerCase())||!validAmount(groupLimit)||groupLimit<=0||groupLimit<cardBalance(id)))throw Error('Nama grup harus unik dan limit gabungan tidak boleh kurang dari utang kartu.');
-  if(group&&existing?.groupId!==group.id&&cardBalance(id)>Math.max(0,group.limit-groupBalance(group.id)))throw Error('Sisa limit grup tidak cukup untuk utang kartu ini.');
+  if(!shared&&(!validAmount(limit)||limit<=0))throw Error('Limit kartu harus berupa nominal positif.');
+  if(fresh&&(!groupName||groupName.length>60||cardGroups.some(g=>g.name.toLowerCase()===groupName.toLowerCase())||!validAmount(groupLimit)||groupLimit<=0))throw Error('Nama grup harus unik dan limit gabungan harus positif.');
   if(!['manual','cycle'].includes(d.dueMode)||(d.dueMode==='cycle'&&!CardSchedule.validRule(schedule))||(d.dueMode==='manual'&&d.due&&!CardSchedule.validDate(d.due)))throw Error('Isi tanggal cetak 1-31 dan H+ 1-60 hari, atau tanggal manual yang valid.');
   // Commit both records only after validating the entire form.
   const groupId=fresh?nextId('group'):group?.id||'';

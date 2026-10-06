@@ -10,8 +10,6 @@ function commitPurchaseFinance(productId,data,baseline){
   if(charge&&charge.amount>ordinaryCardBalance(charge.cardId)+0.000001)throw Error('Pembayaran lama belum dialokasikan. Periksa sisa pokok agar utang tidak tercatat ganda.');
   const plan=buildInstallment(amount,data);
   if(plan.schedule[0].statementDate<p.date)throw Error('Cetak pertama tidak boleh mendahului tanggal pembelian.');
-  const oldCard=cards.find(c=>c.id===charge?.cardId),sameFacility=oldCard&&(oldCard.id===card.id||(oldCard.groupId&&oldCard.groupId===card.groupId));
-  if(amount+installmentFees({installment:plan})>availableCardLimit(card)+(sameFacility?amount:0)+0.000001)throw Error('Sisa limit kartu tidak cukup.');
   const next=charge||{id:nextId('charge'),productId:p.id,date:p.date,amount,note:p.name+' / '+p.purchasedQty+' unit'};
   next.cardId=card.id;next.installment=plan;next.autoPost=data.autoPost===true;next.autoSkip=[];p.payMethod=card.id;
   if(!charge)cardCharges.push(next);
@@ -33,3 +31,4 @@ document.addEventListener('submit',e=>{
   const f=e.target;if(f.id!=='purchaseFinanceForm')return;e.preventDefault();
   try{commitPurchaseFinance(f.dataset.product,installmentFormData(f),f.dataset.baseline);saveDemo();closeDrawer();render();toast('Pembelian terhubung ke cicilan. Penjualan dan jumlah stok tetap.');}catch(err){formError(err.message);}
 });
+

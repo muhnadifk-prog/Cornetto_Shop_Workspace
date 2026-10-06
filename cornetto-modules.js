@@ -78,8 +78,7 @@ function commitStock(data){
       if(plan.schedule[0].statementDate<TODAY)throw Error('Cetak pertama tidak boleh mendahului pembelian.');
     }
   }catch(err){return formError(err.message);}
-  const postedFees=plan?sum(plan.schedule.filter(r=>r.statementDate<=TODAY),r=>r.admin+r.interest):0;
-  if(data.payMethod!=='cash'&&(!card||qty*cost+postedFees>availableCardLimit(card)))return formError('Nilai pembelian dan biaya tercetak melebihi sisa limit kartu / grup.');
+  if(data.payMethod!=='cash'&&!card)return formError('Pilih kartu kredit aktif.');
   const id=nextId('product');
   inventory.unshift({id,name:data.name.trim(),variant:data.variant.trim(),imei,qty,purchasedQty:qty,cost,price,brand:data.brand,supplier:supplier.name,supplierId:supplier.id,category:data.category,condition:data.condition,warranty:data.warranty,payMethod:data.payMethod,date:TODAY,age:0,sku:nextStockSku()});
   if(card)cardCharges.unshift({id:nextId('charge'),cardId:card.id,productId:id,date:TODAY,amount:cost*qty,note:data.name.trim()+' / '+qty+' unit',...(plan?{installment:plan,autoPost:data.autoPost===true||data.autoPost==='on',autoSkip:[]}:{})});
@@ -142,3 +141,4 @@ function handleModuleSubmit(e){const f=e.target,id=f.dataset.id,d=Object.fromEnt
 }
 function downloadData(filename,data,type){const url=URL.createObjectURL(new Blob([data],{type}));const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('File workspace berhasil diunduh.');}
 function moduleExport(){let rows,name;if(view==='tax'){name='pajak-'+taxYear;rows=[['Bulan','Omzet dasar PPh','PPh Final','PPN keluaran','PPN masukan','PPN neto','Disetor','Belum disetor'],...taxRows().map(r=>[r.name,r.base,r.pph??'',r.output,r.vatInput,r.ppn,r.paidPph+r.paidVat,r.remaining])];}else if(view==='cards'){name='kartu-kredit';rows=[['Kartu','Grup limit','Limit sendiri','Belanja stok','Biaya cicilan tercetak','Pembayaran','Utang','Sisa limit kartu / grup','Jatuh tempo','Tanggal cetak bulanan','H+ hari kalender'],...cards.map(c=>[cardName(c.id),cardGroup(c)?.name||'',c.groupId?'':c.limit,sum(cardCharges.filter(t=>t.cardId===c.id),t=>t.amount),sum(cardCharges.filter(t=>t.cardId===c.id),t=>installmentFees(t)),sum(cardPayments.filter(t=>t.cardId===c.id),t=>t.amount),cardBalance(c.id),availableCardLimit(c),cardDue(c),c.dueMode==='cycle'?c.statementDay:'',c.dueMode==='cycle'?c.dueAfterDays:''])];}else return false;const csv='\ufeff'+rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');downloadData('workspace-'+name+'.csv',csv,'text/csv;charset=utf-8');return true;}
+
