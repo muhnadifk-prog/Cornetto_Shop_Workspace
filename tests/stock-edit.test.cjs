@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const ctx={console,Date,structuredClone,Intl,window:{addEventListener(){}},document:{addEventListener(){},getElementById(){return {addEventListener(){}};}},location:{hash:''}};
 vm.createContext(ctx);
-for(const file of ['card-schedule.js','card-groups.js','cornetto-modules.js','cornetto.js','money-input.js','sale-edit.js','stock-edit.js','installments.js','installments-ui.js','purchase-finance.js','installment-import.js','books-ui.js','workspace.js']){
+for(const file of ['card-schedule.js','card-groups.js','cornetto-modules.js','cornetto.js','money-input.js','sale-edit.js','stock-edit.js','inventory-filters.js','installments.js','installments-ui.js','purchase-finance.js','installment-import.js','books-ui.js','workspace.js']){
   let code=fs.readFileSync(path.join(__dirname,'..',file),'utf8');
   if(file==='workspace.js')code=code.replace(/startWorkspace\(\);\s*$/,'');
   vm.runInContext(code,ctx,{filename:file});
@@ -22,7 +22,10 @@ assert.equal(run('initial.inventory[0].qty'),2);
 for(const draft of ["{...draft,qty:'-1'}","{...draft,cost:'-1'}","{...draft,price:'NaN'}","{...draft,name:' '}" ,"{...draft,date:'2026-02-30'}","{...draft,date:'2026-03-01'}","{...draft,supplierId:'missing'}"]){
   assert.throws(()=>run(`prepareStockEdit(initial,'p',${draft},baseline)`));
 }
-assert.throws(()=>run("prepareStockDelete(initial,'p',baseline)"),/penjualan/);
+run("var archivedSale=prepareStockDelete(initial,'p',baseline);validateSnapshot(archivedSale)");
+assert.equal(run('archivedSale.inventory[0].qty'),0);assert.ok(run('archivedSale.inventory[0].deletedAt'));
+assert.deepEqual(plain('archivedSale.sales'),plain('initial.sales'));
+assert.equal(run('archivedSale.inventory[0].deletedStockQty'),2);
 run("var stale=structuredClone(initial);stale.sales[0].qty=2");
 assert.throws(()=>run("prepareStockEdit(stale,'p',draft,baseline)"),/berubah/);
 run("var negative=structuredClone(initial);negative.inventory[0].qty=-1;negative.inventory[0].purchasedQty=0");
@@ -30,23 +33,32 @@ run("var corrected=prepareStockEdit(negative,'p',{...draft,qty:'0'},stockBaselin
 assert.equal(run('corrected.inventory[0].purchasedQty'),1);
 assert.equal(run('corrected.inventory[0].qty'),0);
 run("var credit=structuredClone(initial);credit.cardCharges=[{id:'c',productIds:['p'],cardId:'cc',amount:3000000,installment:{schedule:[]}}]");
-assert.throws(()=>run("prepareStockEdit(credit,'p',draft,stockBaseline(credit,'p'))"),/terkunci/);
+run("var unlocked=prepareStockEdit(credit,'p',{...draft,date:'2026-01-02'},stockBaseline(credit,'p'))");
+assert.equal(run('unlocked.inventory[0].cost'),1100000);assert.equal(run('unlocked.inventory[0].qty'),4);assert.equal(run('unlocked.inventory[0].date'),'2026-01-02');
+assert.deepEqual(plain('unlocked.cardCharges'),plain('credit.cardCharges'));
 run("var creditEdit=prepareStockEdit(credit,'p',{...credit.inventory[0],name:'New name',price:'1500000'},stockBaseline(credit,'p'))");
 assert.deepEqual(plain('creditEdit.cardCharges'),plain('credit.cardCharges'));
 assert.deepEqual(plain('creditEdit.sales'),plain('credit.sales'));
 run("credit.sales=[]");
-assert.throws(()=>run("prepareStockDelete(credit,'p',stockBaseline(credit,'p'))"),/pembiayaan/);
+run("var archivedCredit=prepareStockDelete(credit,'p',stockBaseline(credit,'p'))");
+assert.equal(run('archivedCredit.inventory[0].qty'),0);assert.ok(run('archivedCredit.inventory[0].deletedAt'));
+assert.deepEqual(plain('archivedCredit.cardCharges'),plain('credit.cardCharges'));
 run("var removable=structuredClone(initial);removable.sales=[];removable.inventory[0].qty=removable.inventory[0].purchasedQty;var removeBaseline=stockBaseline(removable,'p');var deleted=prepareStockDelete(removable,'p',removeBaseline)");
 assert.equal(run('deleted.inventory.length'),0);
 assert.equal(run('removable.inventory.length'),1);
 run("removable.cardCharges.push({id:'late',productId:'p'})");
 assert.throws(()=>run("prepareStockDelete(removable,'p',removeBaseline)"),/berubah/);
 run("var tracked=structuredClone(initial);tracked.sales=[];tracked.migration={installmentImport:{rows:[{productId:'p',status:'active'}]}};");
-assert.throws(()=>run("prepareStockDelete(tracked,'p',stockBaseline(tracked,'p'))"),/pembiayaan/);
+run("var archivedImport=prepareStockDelete(tracked,'p',stockBaseline(tracked,'p'))");assert.ok(run('archivedImport.inventory[0].deletedAt'));assert.deepEqual(plain('archivedImport.migration'),plain('tracked.migration'));
 run("tracked.migration=null;tracked.ledger=[{productId:'p'}]");
-assert.throws(()=>run("prepareStockDelete(tracked,'p',stockBaseline(tracked,'p'))"),/pembiayaan/);
+run("var archivedLedger=prepareStockDelete(tracked,'p',stockBaseline(tracked,'p'))");assert.ok(run('archivedLedger.inventory[0].deletedAt'));assert.deepEqual(plain('archivedLedger.ledger'),plain('tracked.ledger'));
+run("applyState(archivedSale)");assert.equal(run('stockDateRows().length'),0);
+run("commitSaleEdit('s',{...sales[0],qty:1,price:1400000},JSON.stringify(sales[0]));validateSnapshot(snapshot())");assert.equal(run('inventory[0].qty'),0);assert.equal(run('sales[0].cost'),1000000);
+assert.throws(()=>run("prepareStockEdit(snapshot(),'p',draft,stockBaseline(snapshot(),'p'))"),/dihapus/);
+assert.throws(()=>run("prepareStockDelete(snapshot(),'p',stockBaseline(snapshot(),'p'))"),/dihapus/);
 run("inventory=[{sku:'CS-001'},{sku:'CS-003'}]");
 assert.equal(run('nextStockSku()'),'CS-004');
 assert.ok(run("stockTable(initial.inventory).includes('data-action=\"edit-stock\"')"));
 assert.ok(run("stockTable(initial.inventory).includes('data-action=\"delete-stock\"')"));
-console.log('PASS: edit deltas, historical HPP preserved, metadata retained, validation, negative-stock correction, linked deletion guards, stale-edit/delete protection, pure state changes and unique SKU after deletion.');
+console.log('PASS: unlocked financed date/cost/quantity, historical HPP/funding preserved, linked deletion archives, no orphaned references, archived sales remain editable without restoring stock, stale-edit/delete protection and unique SKU after deletion.');
+

@@ -1,7 +1,7 @@
 'use strict';
 let stockPeriod='all',stockStart='',stockEnd='';
 let stockOnlyAvailable=false;
-function stockDateRows(){return inventory.filter(p=>(!stockStart&&!stockEnd)||p.date&&(!stockStart||p.date>=stockStart)&&(!stockEnd||p.date<=stockEnd));}
+function stockDateRows(){return inventory.filter(p=>!p.deletedAt&&((!stockStart&&!stockEnd)||p.date&&(!stockStart||p.date>=stockStart)&&(!stockEnd||p.date<=stockEnd)));}
 function stockDateControls(){return `<section class="stock-date-filters" aria-label="Filter tanggal masuk"><label class="form-field"><span>Tanggal masuk</span><select id="stockPeriod" aria-label="Periode tanggal masuk">${periodOptions.map(([key,label])=>`<option value="${key}" ${stockPeriod===key?'selected':''}>${label}</option>`).join('')}<option value="custom" ${stockPeriod==='custom'?'selected':''}>Rentang khusus</option></select></label><label class="form-field"><span>Dari tanggal</span><input type="date" id="stockStart" aria-label="Tanggal masuk mulai" value="${stockStart}" max="${TODAY}"></label><span class="date-range-separator" aria-hidden="true">-</span><label class="form-field"><span>Sampai tanggal</span><input type="date" id="stockEnd" aria-label="Tanggal masuk sampai" value="${stockEnd}" max="${TODAY}"></label><button type="button" class="icon-button" data-stock-date-reset title="Hapus filter tanggal" aria-label="Hapus filter tanggal" ${!stockStart&&!stockEnd?'disabled':''}>${icon('rotate-ccw')}</button><p class="form-error" id="stockDateError" role="alert"></p></section>`;}
 function updateStockImeiField(f){
   const box=f.querySelector('[data-stock-imei]');if(!box)return;

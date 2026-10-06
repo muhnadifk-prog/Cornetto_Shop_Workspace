@@ -26,7 +26,8 @@ function commitSaleEdit(id,d,baseline){
   if(extra>Math.max(0,p.qty))throw Error('Jumlah penjualan melebihi stok tersedia.');
   const cost=p===old?s.cost:p.cost;
   // Only the stock delta changes; historical fees, purchase funding and attachments stay intact.
-  old.qty+=s.qty;p.qty-=qty;
+  if(!old.deletedAt)old.qty+=s.qty;
+  if(!p.deletedAt)p.qty-=qty;
   Object.assign(s,{productId:p.id,date:d.date,qty,price,cost,fee,shipping,channel:d.channel,channelId:ch?.id||s.channelId,buyer:d.buyer.trim(),status:d.status});
 }
 function updateSaleEditEstimate(f){
@@ -40,3 +41,4 @@ document.addEventListener('submit',e=>{
   const f=e.target;if(f.id!=='saleEditForm')return;e.preventDefault();
   try{commitSaleEdit(f.dataset.id,Object.fromEntries(new FormData(f)),saleEditBaseline);const finance=f.elements.financePurchase.checked,productId=f.elements.productId.value;saveDemo();closeDrawer();render();if(finance)purchaseFinanceForm(productId);else toast('Penjualan diperbarui.');}catch(err){formError(err.message);}
 });
+
