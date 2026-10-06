@@ -69,14 +69,14 @@ function editStockForm(id){
     ${selectField('Garansi','warranty',stockEditOptions(business.warranties,p.warranty))}
     ${field('IMEI / nomor seri','imei','text',p.imei||'','maxlength="100"')}
     <label class="form-field"><span>Catatan</span><textarea name="notes" maxlength="4000">${esc(p.notes||'')}</textarea></label>
-    ${formFooter('Simpan perubahan')}</form>`,'INVENTORI / '+p.sku);
+    ${formFooter('Simpan perubahan')}</form>`,'INVENTORI');
   el('stockEditForm').dataset.baseline=stockBaseline(state,id);
 }
 function deleteStockForm(id){
   const state=snapshot(),p=productById(id);if(!p)return;
   const reason=stockDeleteReason(state,id);
-  openDrawer(reason?'Barang tidak dapat dihapus':'Hapus barang?',`<form id="stockDeleteForm" data-id="${esc(id)}"><div class="stock-delete-summary"><strong>${esc(p.name)}</strong><p>${esc(p.variant)} / ${esc(p.sku)}</p></div>
-    ${reason?`<p class="stock-edit-note" role="status">${esc(reason)}</p><div class="form-footer"><button type="button" class="button" data-action="cancel">Tutup</button><button type="button" class="button" data-action="edit-stock" data-id="${p.id}">${icon('pencil')}Edit barang</button></div>`:`<div class="detail-lines">${bookLine('Nilai stok yang dihapus',p.cost*Math.max(0,p.qty))}<div class="book-line"><span>Sisa stok</span><strong>${p.qty} unit</strong></div></div><p class="stock-edit-note">Barang beserta lampiran invoice-nya akan dihapus dari inventori dan disinkronkan ke cloud jika aktif. Tindakan ini tidak dapat dibatalkan.</p><p id="formError" class="form-error" role="alert"></p><div class="form-footer"><button type="button" class="button" data-action="cancel">Batal</button><button type="submit" class="button danger">${icon('trash-2')}Hapus barang</button></div>`}</form>`,'INVENTORI / '+p.sku);
+  openDrawer(reason?'Barang tidak dapat dihapus':'Hapus barang?',`<form id="stockDeleteForm" data-id="${esc(id)}"><div class="stock-delete-summary"><strong>${esc(p.name)}</strong><p>${esc(p.variant)}${p.imei?' / IMEI '+esc(p.imei):''}</p></div>
+    ${reason?`<p class="stock-edit-note" role="status">${esc(reason)}</p><div class="form-footer"><button type="button" class="button" data-action="cancel">Tutup</button><button type="button" class="button" data-action="edit-stock" data-id="${p.id}">${icon('pencil')}Edit barang</button></div>`:`<div class="detail-lines">${bookLine('Nilai stok yang dihapus',p.cost*Math.max(0,p.qty))}<div class="book-line"><span>Sisa stok</span><strong>${p.qty} unit</strong></div></div><p class="stock-edit-note">Barang beserta lampiran invoice-nya akan dihapus dari inventori dan disinkronkan ke cloud jika aktif. Tindakan ini tidak dapat dibatalkan.</p><p id="formError" class="form-error" role="alert"></p><div class="form-footer"><button type="button" class="button" data-action="cancel">Batal</button><button type="submit" class="button danger">${icon('trash-2')}Hapus barang</button></div>`}</form>`,'INVENTORI');
   el('stockDeleteForm').dataset.baseline=stockBaseline(state,id);
 }
 document.addEventListener('submit',async e=>{

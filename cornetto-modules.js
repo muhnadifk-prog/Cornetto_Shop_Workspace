@@ -54,8 +54,18 @@ function nextStockSku(){
   const last=inventory.reduce((max,p)=>Math.max(max,/^CS-\d+$/.test(p.sku)?Number(p.sku.slice(3)):0),0);
   return 'CS-'+String(last+1).padStart(3,'0');
 }
+function isPhoneCategory(category){return ['handphone','smartphone','ponsel','hp'].includes(String(category||'').trim().toLowerCase());}
+function validateStockImei(value,category,qty,excludeId){
+  const imei=String(value||'').trim();
+  if(!isPhoneCategory(category)||!imei)return '';
+  if(!/^[0-9]{15}$/.test(imei))throw Error('IMEI harus terdiri dari 15 angka.');
+  if(qty!==1)throw Error('IMEI berlaku untuk satu unit. Catat handphone dengan IMEI berbeda sebagai barang masuk terpisah.');
+  if(inventory.some(p=>p.id!==excludeId&&p.qty>0&&String(p.imei||'').trim()===imei))throw Error('IMEI ini sudah ada pada stok yang masih tersedia.');
+  return imei;
+}
 function commitStock(data){
   const qty=Number(data.qty),cost=Number(data.cost),price=Number(data.price);
+  let imei;try{imei=validateStockImei(data.imei,data.category,qty);}catch(err){return formError(err.message);}
   if(!Number.isInteger(qty)||qty<1||!validAmount(cost)||!validAmount(price)||!validAmount(cost*qty)||cost<=0||price<=0)return formError('Periksa jumlah, HPP, dan harga jual.');
   const supplier=suppliers.find(s=>s.id===data.supplierId&&s.active);
   if(!supplier)return formError('Pilih supplier aktif.');
@@ -71,7 +81,7 @@ function commitStock(data){
   const postedFees=plan?sum(plan.schedule.filter(r=>r.statementDate<=TODAY),r=>r.admin+r.interest):0;
   if(data.payMethod!=='cash'&&(!card||qty*cost+postedFees>availableCardLimit(card)))return formError('Nilai pembelian dan biaya tercetak melebihi sisa limit kartu / grup.');
   const id=nextId('product');
-  inventory.unshift({id,name:data.name.trim(),variant:data.variant.trim(),qty,purchasedQty:qty,cost,price,brand:data.brand,supplier:supplier.name,supplierId:supplier.id,category:data.category,condition:data.condition,warranty:data.warranty,payMethod:data.payMethod,date:TODAY,age:0,sku:nextStockSku()});
+  inventory.unshift({id,name:data.name.trim(),variant:data.variant.trim(),imei,qty,purchasedQty:qty,cost,price,brand:data.brand,supplier:supplier.name,supplierId:supplier.id,category:data.category,condition:data.condition,warranty:data.warranty,payMethod:data.payMethod,date:TODAY,age:0,sku:nextStockSku()});
   if(card)cardCharges.unshift({id:nextId('charge'),cardId:card.id,productId:id,date:TODAY,amount:cost*qty,note:data.name.trim()+' / '+qty+' unit',...(plan?{installment:plan,autoPost:data.autoPost===true||data.autoPost==='on',autoSkip:[]}:{})});
   return true;
 }

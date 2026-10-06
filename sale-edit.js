@@ -7,7 +7,7 @@ function editSaleForm(id){
   const names=[...new Set([s.channel,...channels.filter(c=>c.active).map(c=>c.name)])];
   openDrawer('Edit penjualan',`<form id="saleEditForm" data-id="${esc(id)}">
     ${field('Tanggal','date','date',s.date,`required min="2000-01-01" max="${TODAY}"`)}
-    ${selectField('Produk / batch stok','productId',products.map(p=>`<option value="${esc(p.id)}" ${p.id===s.productId?'selected':''}>${esc(p.name)} / ${esc(p.variant)} / ${esc(p.sku)} / HPP ${money(p.id===s.productId?s.cost:p.cost)}</option>`).join(''))}
+    ${selectField('Produk / batch stok','productId',products.map(p=>`<option value="${esc(p.id)}" ${p.id===s.productId?'selected':''}>${esc(p.name)} / ${esc(p.variant)} / ${p.imei?'IMEI '+esc(p.imei):p.date?date(p.date):'Tanggal belum diisi'} / HPP ${money(p.id===s.productId?s.cost:p.cost)}</option>`).join(''))}
     <div class="field-pair">${field('Jumlah unit','qty','number',s.qty,'required min="1" step="1"')}${field('Harga jual per unit (Rp)','price','number',s.price,'required min="1" step="1"')}</div>
     <div class="field-pair">${selectField('Channel','channel',names.map(name=>`<option ${name===s.channel?'selected':''}>${esc(name)}</option>`).join(''))}${selectField('Status dana','status',[['unknown','Belum diketahui'],['pending','Belum cair'],['paid','Lunas']].map(([v,label])=>`<option value="${v}" ${v===s.status?'selected':''}>${label}</option>`).join(''))}</div>
     <div class="field-pair">${field('Biaya admin total (Rp)','fee','number',s.fee,'required min="0" step="1"')}${field('Ongkir ditanggung (Rp)','shipping','number',s.shipping||0,'required min="0" step="1"')}</div>
@@ -40,4 +40,3 @@ document.addEventListener('submit',e=>{
   const f=e.target;if(f.id!=='saleEditForm')return;e.preventDefault();
   try{commitSaleEdit(f.dataset.id,Object.fromEntries(new FormData(f)),saleEditBaseline);const finance=f.elements.financePurchase.checked,productId=f.elements.productId.value;saveDemo();closeDrawer();render();if(finance)purchaseFinanceForm(productId);else toast('Penjualan diperbarui.');}catch(err){formError(err.message);}
 });
-
