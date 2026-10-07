@@ -3,6 +3,11 @@
   const TABLE='cornetto_workspace_v1', OUTBOX='cloud-outbox-v1';
   let client,user=null,localSync=null,mode='local',message='Tersimpan di perangkat ini',busy=false,timer,remoteChoice=null,booted=false,sessionVersion=0,checking=null,lastAutoCheck=0;
   const AUTO_CHECK_MS=120000;
+  function cloudFetch(url,options){
+    // Whole-workspace uploads include invoice attachments; allow bounded upload time.
+    const saving=String(url).split('?')[0].endsWith('/rest/v1/rpc/cornetto_save_workspace_v1');
+    return fetch(url,{...options,signal:options?.signal||AbortSignal.timeout(saving?120000:25000)});
+  }
   function syncFailure(err){
     const code=String(err?.code||''),detail=String(err?.message||'');
     let reason='Penyebab belum dikenali';
@@ -64,7 +69,7 @@
       await saveQueue;
       for(let i=0;i<4;i++){
         const job=await stageJob();if(!job)break;if(job.ownerId!==user?.id)break;
-        status('saving','Mengirim perubahan ke cloud...');
+        status('saving','Mengirim perubahan ke cloud... Tunggu hingga 2 menit; jangan tutup tab.');
         const response=await client.rpc('cornetto_save_workspace_v1',{p_expected_revision:job.expected,p_operation:job.operation,p_data:job.data});
         if(response.error)throw response.error;
         if(!Number.isSafeInteger(response.data?.revision)||response.data.revision<1)throw Error('Jawaban cloud tidak valid.');
@@ -158,7 +163,7 @@
   async function start(){
     if(booted||!db||storageFailed)return;booted=true;
     const config=window.CORNETTO_CLOUD;
-    client=window.supabase.createClient(config.url,config.publishableKey,{auth:{storageKey:'cornetto-workspace-auth-v1',persistSession:true,autoRefreshToken:true,detectSessionInUrl:false},global:{fetch:(url,options)=>fetch(url,{...options,signal:options?.signal||AbortSignal.timeout(25000)})}});
+    client=window.supabase.createClient(config.url,config.publishableKey,{auth:{storageKey:'cornetto-workspace-auth-v1',persistSession:true,autoRefreshToken:true,detectSessionInUrl:false},global:{fetch:cloudFetch}});
     client.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_OUT'){setTimeout(()=>{user=null;sessionVersion++;refresh();status('local','Sesi berakhir. Masuk kembali.');if(locked())showAccount();},0);}else if(event==='TOKEN_REFRESHED')user=session?.user||null;});
     const {data,error}=await client.auth.getSession();user=error?null:data.session?.user||null;await connect();
     lastAutoCheck=Date.now();setInterval(autoCheck,AUTO_CHECK_MS);
