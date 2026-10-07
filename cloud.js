@@ -3,6 +3,20 @@
   const TABLE='cornetto_workspace_v1', OUTBOX='cloud-outbox-v1';
   let client,user=null,localSync=null,mode='local',message='Tersimpan di perangkat ini',busy=false,timer,remoteChoice=null,booted=false,sessionVersion=0,checking=null,lastAutoCheck=0;
   const AUTO_CHECK_MS=120000;
+  function syncFailure(err){
+    const code=String(err?.code||''),detail=String(err?.message||'');
+    let reason='Penyebab belum dikenali';
+    if(code==='57014'||/timeout|timed out|aborted/i.test(detail))reason='Server terlalu lama merespons';
+    else if(code==='PGRST301'||code==='PGRST303'||/jwt|token.*expired/i.test(detail))reason='Sesi login ditolak server';
+    else if(code==='42501')reason='Izin penyimpanan ditolak server';
+    else if(code==='PGRST202'||code==='42883')reason='Fungsi penyimpanan cloud belum tersedia';
+    else if(/INVALID_WORKSPACE/i.test(detail))reason='Format data ditolak server';
+    else if(/fetch|network|offline/i.test(detail))reason='Koneksi ke server gagal';
+    else if(code==='53100'||code==='53300')reason='Kapasitas server sedang tidak mencukupi';
+    // Never display raw server errors: they can contain submitted business data.
+    const safeCode=/^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(code)?code:'TANPA_KODE';
+    return 'Belum tersinkron. '+reason+' ('+safeCode+'). Perubahan belum dikonfirmasi cloud; simpan Backup lokal.';
+  }
   const dialog=document.createElement('dialog');dialog.id='cloudDialog';dialog.setAttribute('aria-label','Akun dan sinkronisasi cloud');document.body.append(dialog);
   const hasData=d=>!!d&&(d.inventory.length+d.sales.length+d.expenses.length+d.ledger.length+d.cards.length>0);
   const locked=()=>!!localSync?.ownerId&&user?.id!==localSync.ownerId;
@@ -14,6 +28,7 @@
   function showAccount(){
     const signed=!!user;
     dialog.innerHTML=`<div class="cloud-head"><h2>${signed?'Akun cloud':'Masuk ke cloud'}</h2>${!locked()?'<button type="button" class="icon-button" data-cloud="close" title="Tutup" aria-label="Tutup akun cloud">'+icon('x')+'</button>':''}</div><p id="cloudInlineStatus" role="status">${esc(message)}</p>`+(signed?`<p>${esc(user.email||'Akun terhubung')}</p>${locked()?'<p>Akun ini berbeda dari pemilik data lokal. Keluar lalu masuk dengan akun pemilik.</p>':''}<div class="backup-actions"><button class="button" data-cloud="check">${icon('refresh-cw')}Periksa sinkron</button>${!localSync?.ownerId?`<button class="button primary" data-cloud="activate">${icon('cloud-upload')}Aktifkan cloud</button>`:''}${mode==='conflict'||remoteChoice?`<button class="button" data-cloud="use-remote">${icon('cloud-download')}Gunakan data cloud</button><button class="button" data-cloud="export-local">${icon('download')}Backup lokal</button>`:''}<button class="button" data-cloud="logout">${icon('log-out')}Keluar</button></div>`:`<form id="cloudLoginForm">${field('Email akun website lama','email','email','','required autocomplete="username"')}${field('Password akun website lama','password','password','','required autocomplete="current-password"')}<p id="cloudLoginError" class="form-error" role="alert"></p><button class="button primary" type="submit">${icon('log-in')}Masuk</button></form><p class="form-hint">Gunakan akun login tracker, bukan password dashboard Supabase.</p>`);
+    if(signed&&!dialog.querySelector('[data-cloud="export-local"]'))dialog.querySelector('.backup-actions').insertAdjacentHTML('beforeend','<button class="button" data-cloud="export-local">'+icon('download')+'Backup lokal</button>');
     if(!dialog.open)dialog.showModal();refreshIcons();
   }
   const originalDataView=moduleViews.data;
@@ -57,7 +72,7 @@
       }
       const stored=await readStored('current');localSync=stored?.sync||null;
       if(localSync?.dirty)status('pending','Tersimpan lokal, menunggu sinkron');else if(localSync?.ownerId)status('synced','Tersimpan di cloud'+(localSync.lastSynced?' / '+new Date(localSync.lastSynced).toLocaleTimeString('id-ID'):''));
-    }catch(err){if(err.code==='40001'||String(err.message).includes('CLOUD_CONFLICT')||String(err.message).includes('UPGRADE_REQUIRED')){status('conflict','Ada perubahan dari perangkat lain. Data lokal tidak ditimpa.');showAccount();}else status('pending','Belum tersinkron. Data lokal aman; coba Periksa sinkron.');}
+    }catch(err){if(err.code==='40001'||String(err.message).includes('CLOUD_CONFLICT')||String(err.message).includes('UPGRADE_REQUIRED')){status('conflict','Ada perubahan dari perangkat lain. Data lokal tidak ditimpa.');showAccount();}else status('pending',syncFailure(err));}
     finally{busy=false;refresh();}
   }
   async function flush(){
@@ -81,7 +96,7 @@
     if(mode==='conflict')return;
     if(current.sync.dirty||await readStored(OUTBOX)){await flush();return;}
     try{const remote=await getRemote(true);if(!remote){status('conflict','Data cloud akun ini tidak ditemukan. Salinan lokal dipertahankan.');return;}if(remote.revision!==current.sync.baseRevision){if(el('drawer').open)return;await acceptRemote(await getRemote());}else status('synced','Tersimpan di cloud / '+new Date(remote.updated_at).toLocaleTimeString('id-ID'));}
-    catch{status('pending','Cloud belum terjangkau; salinan lokal tetap tersedia.');}
+    catch(err){status('pending',syncFailure(err));}
   }
   async function connect(){
     const version=sessionVersion;
@@ -99,7 +114,7 @@
         if(!hasData(stored?.data)){await acceptRemote(remote);close();}
         else{remoteChoice=remote;status('choose','Akun ini sudah memiliki data cloud. Pilih Gunakan data cloud; salinan lokal akan dicadangkan.');showAccount();}
       }else{status('ready','Cloud akun ini masih kosong. Aktifkan untuk mengunggah data perangkat ini.');showAccount();}
-    }catch(err){status('pending','Koneksi cloud belum berhasil. Periksa koneksi lalu coba lagi.');}
+    }catch(err){status('pending',syncFailure(err));}
     refresh();
   }
   async function activate(){
@@ -150,4 +165,3 @@
   }
   if(window.cornettoReady)start().catch(()=>status('pending','Cloud belum dapat dimuat.'));else window.addEventListener('cornetto:ready',()=>start().catch(()=>status('pending','Cloud belum dapat dimuat.')),{once:true});
 })();
-
