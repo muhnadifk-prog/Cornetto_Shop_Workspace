@@ -33,7 +33,11 @@ function syncDateControls(root=document){
         fp.monthsDropdownContainer?.setAttribute('aria-label','Bulan');fp.currentYearElement.setAttribute('aria-label','Tahun');
         fp.prevMonthNav.setAttribute('aria-label','Bulan sebelumnya');fp.nextMonthNav.setAttribute('aria-label','Bulan berikutnya');
       },
-      onOpen:(_,value,fp)=>{const wrapper=fp.input.parentElement.getBoundingClientRect(),width=fp.calendarContainer.offsetWidth;fp.calendarContainer.style.left=Math.max(-wrapper.left+8,Math.min(0,document.documentElement.clientWidth-wrapper.left-width-8))+'px';},
+      onOpen:(_,value,fp)=>{
+        const wrapper=fp.input.parentElement.getBoundingClientRect(),dialog=fp.input.closest('dialog'),left=dialog?dialog.getBoundingClientRect().left:0;
+        const right=Math.min(document.documentElement.clientWidth,dialog?left+dialog.clientWidth:Infinity),width=Math.min(307,right-left-16);
+        fp.calendarContainer.style.width=width+'px';fp.calendarContainer.style.left=Math.max(left-wrapper.left+8,Math.min(0,right-wrapper.left-width-8))+'px';
+      },
       onChange:(_,value,fp)=>{if(!preserveInvalidDate(fp))fp.altInput.setCustomValidity('');},
       onClose:(_,value,fp)=>preserveInvalidDate(fp)
     });
