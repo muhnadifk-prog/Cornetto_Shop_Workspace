@@ -1,6 +1,7 @@
 'use strict';
 function bookRecord(key,state=snapshot()){
   const [kind,id,number]=key.split(':');
+  if(kind==='scheduled')return scheduledExpenseRows(state,TODAY).find(r=>r.scheduleId===id&&r.dueDate===number);
   if(kind==='expense')return state.expenses[Number(id)];
   if(kind==='ledger')return state.ledger.find(r=>r.id===id);
   const c=state.cardCharges.find(c=>c.id===id),row=c?.installment?.schedule.find(r=>r.number===Number(number));
@@ -10,9 +11,10 @@ function bookRecord(key,state=snapshot()){
 }
 function bookBaseline(key,state=snapshot()){
   const r=bookRecord(key,state);
-  return JSON.stringify({record:r,expenses:key.startsWith('expense:')?state.expenses:null,charges:state.cardCharges.filter(c=>c.id===r?.chargeId),payments:state.cardPayments.filter(p=>p.id===r?.paymentId||p.installmentChargeId===r?.chargeId),imports:state.migration?.installmentImport?.rows.filter(x=>x.chargeId===r?.chargeId)});
+  return JSON.stringify({record:r,expenses:key.startsWith('expense:')?state.expenses:null,schedule:key.startsWith('scheduled:')?(state.business.expenseSchedules||[]).find(s=>s.id===r?.scheduleId):null,charges:state.cardCharges.filter(c=>c.id===r?.chargeId),payments:state.cardPayments.filter(p=>p.id===r?.paymentId||p.installmentChargeId===r?.chargeId),imports:state.migration?.installmentImport?.rows.filter(x=>x.chargeId===r?.chargeId)});
 }
 function bookImpact(key,r,remove=false){
+  if(key.startsWith('scheduled:'))return 'Koreksi hanya berlaku untuk catatan tanggal ini. Jadwal berikutnya tetap. Pembayaran belum dikonfirmasi.';
   if(key.startsWith('installment:'))return 'Koreksi ini hanya mengubah beban dalam laporan. Tagihan, bunga bank, dan jadwal pembayaran tetap.';
   if(r.paymentId)return remove?'Pembayaran kartu terkait juga dihapus dan utang bertambah kembali. Pembayaran otomatis angsuran ini dihentikan agar tidak muncul lagi.':'Tanggal, nominal, dan keterangan pembayaran kartu ikut diperbarui. Angsuran yang dikoreksi tidak dicatat ulang otomatis.';
   if(r.chargeId)return remove?'Penerimaan pinjaman, pembiayaan kartu, dan pembayaran yang terhubung ikut dihapus. Baris impor terkait kembali perlu dicocokkan.':'Nominal dan tanggal pokok pembiayaan ikut diperbarui. Pembayaran terdahulu tetap dan akan diperiksa terhadap jadwal baru.';
@@ -23,13 +25,17 @@ function bookEditForm(key,remove=false){
   const capital=key.startsWith('ledger:');
   openDrawer(remove?'Hapus catatan?':capital?'Edit modal & pinjaman':'Edit beban operasional',`<form id="bookEditForm" data-key="${esc(key)}" data-remove="${remove}"><p class="book-edit-notice">${esc(bookImpact(key,r,remove))}</p>${remove?`<strong>${esc(r.name||r.note)}</strong>${bookLine('Nominal',r.amount)}`:`${dayFirstField('Tanggal','date',r.date)}${capital?selectField('Jenis','type',Object.entries(ledgerLabels).map(([v,label])=>`<option value="${v}" ${v===r.type?'selected':''}>${label}</option>`).join('')):field('Kategori','category','text',r.category,'required maxlength="100"')}${field('Keterangan','note','text',r.name||r.note||'','required maxlength="200"')}${field('Nominal (Rp)','amount','number',r.amount,'required min="0.01" step="0.01"')}`}${formFooter(remove?'Hapus catatan':'Simpan perubahan')}</form>`,'PEMBUKUAN');
   el('bookEditForm').dataset.baseline=bookBaseline(key);
+  if(!remove&&capital&&r.type==='pinjam'&&!r.chargeId&&!r.paymentId){el('drawerBody').insertAdjacentHTML('beforeend',`<button class="button" data-link-loan="${r.id}">${icon('link')}Hubungkan ke kartu kredit</button>`);refreshIcons();}
 }
 function prepareBookEdit(state,key,d,baseline,remove=false){
   if(bookBaseline(key,state)!==baseline)throw Error('Catatan terkait berubah. Buka ulang edit pembukuan.');
   const next=structuredClone(state),r=bookRecord(key,next);if(!r)throw Error('Catatan tidak ditemukan.');
   const amount=Number(d.amount),capital=key.startsWith('ledger:');
   if(!remove&&(!CardSchedule.validDate(d.date)||d.date<'2000-01-01'||d.date>TODAY||!installmentMoney(amount)||amount<=0||typeof d.note!=='string'||!d.note.trim()||d.note.length>200||(!capital&&(typeof d.category!=='string'||!d.category.trim()||d.category.length>100))||(capital&&!Object.hasOwn(ledgerLabels,d.type))))throw Error('Periksa tanggal, kategori, keterangan, dan nominal.');
-  if(key.startsWith('installment:')){
+  if(key.startsWith('scheduled:')){
+    next.business.scheduledExpenseCorrections=(next.business.scheduledExpenseCorrections||[]).filter(x=>x.scheduleId!==r.scheduleId||x.dueDate!==r.dueDate);
+    next.business.scheduledExpenseCorrections.push({scheduleId:r.scheduleId,dueDate:r.dueDate,...(remove?{deleted:true}:{date:d.date,amount,category:d.category.trim(),name:d.note.trim()})});
+  }else if(key.startsWith('installment:')){
     next.business.expenseCorrections=(next.business.expenseCorrections||[]).filter(x=>x.chargeId!==r.chargeId||x.number!==r.number);
     next.business.expenseCorrections.push({chargeId:r.chargeId,number:r.number,...(remove?{deleted:true}:{date:d.date,amount,category:d.category.trim(),name:d.note.trim()})});
   }else if(key.startsWith('expense:')){

@@ -119,6 +119,7 @@ function validateSnapshot(d){
     }
   }
   validateInstallments(d);
+  if(typeof validateExpenseSchedules==='function')validateExpenseSchedules(d);
   return d;
 }
 async function previewBackup(file){
@@ -140,7 +141,7 @@ document.addEventListener('click',async e=>{
     if(!pendingImport)return;const next=structuredClone(pendingImport);a.disabled=true;await saveQueue;if(storageFailed)throw Error('Selesaikan masalah penyimpanan sebelum impor.');await persist(next,true);applyState(next);pendingImport=null;period='all';go('data');toast('Impor selesai dan tersimpan di perangkat ini.');
   }
   if(a.dataset.work==='invoice'){const r=a.dataset.kind==='stock'?productById(a.dataset.id):sales.find(s=>s.id===a.dataset.id),attachment=r.invoice;const data=typeof attachment==='string'?attachment:attachment?.data;if(!/^data:(image\/(png|jpeg|webp)|application\/pdf);base64,[a-z0-9+/=]+$/i.test(data||''))throw Error('Format lampiran tidak didukung. File asli tetap ada di backup.');const mime=data.slice(5,data.indexOf(';')),bytes=Uint8Array.from(atob(data.split(',')[1]),x=>x.charCodeAt(0)),url=URL.createObjectURL(new Blob([bytes],{type:mime})),link=document.createElement('a');link.href=url;link.download=attachment?.name||'invoice';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-  if(a.dataset.work==='add-ledger')openDrawer('Catat modal & pinjaman',`<form id="ledgerForm">${selectField('Jenis','type','<option value="modal">Setoran modal</option><option value="prive">Prive</option><option value="pinjam">Penerimaan pinjaman</option><option value="bayar">Pembayaran pinjaman</option><option value="aset">Pembelian aset</option>')}${field('Tanggal','date','date',TODAY,`required max="${TODAY}"`)}${field('Nominal (Rp)','amount','number','','required min="1" step="1"')}${field('Keterangan','note','text','','required maxlength="200"')}${formFooter('Simpan mutasi')}</form>`,'PEMBUKUAN');
+  if(a.dataset.work==='add-ledger')capitalForm();
  }catch(err){toast(err.message);if(a.isConnected)a.disabled=false;}
 });
 document.addEventListener('submit',e=>{if(e.target.id!=='ledgerForm')return;e.preventDefault();const d=Object.fromEntries(new FormData(e.target)),amount=Number(d.amount);if(!validAmount(amount)||amount<=0)return formError('Nominal harus positif.');ledger.push({id:nextId('ledger'),date:d.date,type:d.type,amount,note:d.note.trim()});finishModule('Mutasi dicatat.');});

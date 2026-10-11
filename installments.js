@@ -37,7 +37,7 @@ function installmentFees(c,asOf=TODAY){return c.installment?sum(c.installment.sc
 function installmentBalance(c){return c.amount-openingInstallmentPrincipal(c)+installmentFees(c)-sum(cardPayments.filter(p=>p.installmentChargeId===c.id),p=>p.amount);}
 function ordinaryCardBalance(id,exclude=''){return sum(cardCharges.filter(c=>c.cardId===id&&!c.installment),c=>c.amount)-sum(cardPayments.filter(p=>p.cardId===id&&!p.installmentChargeId&&p.id!==exclude),p=>p.amount);}
 function installmentExpenses(){return installmentCharges().flatMap(c=>c.installment.schedule.filter(r=>r.statementDate&&r.statementDate<=TODAY&&(r.admin+r.interest>0||(business.expenseCorrections||[]).some(x=>x.chargeId===c.id&&x.number===r.number))).flatMap(r=>{const correction=(business.expenseCorrections||[]).find(x=>x.chargeId===c.id&&x.number===r.number);return correction?.deleted?[]:[{date:r.statementDate,amount:r.admin+r.interest,category:'Biaya cicilan kartu',name:cardName(c.cardId)+' / '+c.note+' / '+r.number+'/'+c.installment.months,...correction,bookKey:'installment:'+c.id+':'+r.number,chargeId:c.id,number:r.number,source:'installment-fee'}];}));}
-function reportExpenses(){return [...expenses.map((e,i)=>({...e,bookKey:'expense:'+i})),...installmentExpenses()];}
+function reportExpenses(){return [...expenses.map((e,i)=>({...e,bookKey:'expense:'+i})),...installmentExpenses(),...(typeof scheduledExpenseRows==='function'?scheduledExpenseRows(snapshot(),TODAY):[])];}
 function installmentUpcoming(){
   return installmentCharges().flatMap(c=>c.installment.schedule.filter(r=>installmentRemaining(c,r)>0).map(row=>({charge:c,row}))).sort((a,b)=>a.row.dueDate.localeCompare(b.row.dueDate));
 }

@@ -1,8 +1,9 @@
 'use strict';
-const bookAccounts={1100:'Kas/bank indikatif - perlu rekonsiliasi',1200:'Piutang / dana penjualan',1300:'Persediaan',1400:'Setoran pajak - belum dialokasikan',1500:'Aset - belum disusutkan',2100:'Utang kartu kredit',2110:'Perantara pembiayaan kartu',2200:'Pinjaman lain',3100:'Modal disetor',3200:'Prive',4100:'Penjualan',5100:'HPP',6100:'Beban operasional dan cicilan',6200:'Biaya marketplace',6300:'Ongkir penjualan',9990:'Akun lawan / saldo awal belum teridentifikasi'};
+const bookAccounts={1100:'Kas/bank indikatif - perlu rekonsiliasi',1200:'Piutang / dana penjualan',1300:'Persediaan',1400:'Setoran pajak - belum dialokasikan',1500:'Aset - belum disusutkan',2100:'Utang kartu kredit',2110:'Perantara pembiayaan kartu',2200:'Pinjaman lain',2300:'Beban terjadwal - pembayaran belum dikonfirmasi',3100:'Modal disetor',3200:'Prive',4100:'Penjualan',5100:'HPP',6100:'Beban operasional dan cicilan',6200:'Biaya marketplace',6300:'Ongkir penjualan',9990:'Akun lawan / saldo awal belum teridentifikasi'};
 const reportNumber=n=>Math.round((n+Number.EPSILON)*100)/100;
 function reportExpenseRows(state,today){
   const rows=state.expenses.map((r,i)=>({...r,id:r.id||'expense-'+i,source:'Catatan beban'}));
+  if(typeof scheduledExpenseRows==='function')rows.push(...scheduledExpenseRows(state,today));
   for(const c of state.cardCharges.filter(c=>c.installment))for(const r of c.installment.schedule){
     if(!r.statementDate||r.statementDate>today)continue;
     const edit=(state.business.expenseCorrections||[]).find(x=>x.chargeId===c.id&&x.number===r.number);
@@ -34,6 +35,7 @@ function buildBookReport(state,range,today){
     entry(p.date,'stock-'+p.id,'Pembelian '+p.name,[[1300,amount],[pay,-amount]],'Nilai rekonstruksi dari jumlah masuk dan HPP saat ekspor; koreksi stok historis belum tersedia');
   }
   for(const e of state.expenses)entry(e.date,e.id||'expense-'+state.expenses.indexOf(e),e.name||e.note,[[6100,e.amount],[1100,-e.amount]],'Pembayaran beban diasumsikan pada tanggal catatan');
+  if(typeof scheduledExpenseRows==='function')for(const e of scheduledExpenseRows(state,today))entry(e.date,e.id,e.name,[[6100,e.amount],[2300,-e.amount]],'Beban otomatis sesuai jadwal pemilik; pembayaran dan bukti tagihan belum dikonfirmasi');
   for(const c of state.cardCharges){
     const linked=state.inventory.some(p=>p.id===c.productId||c.productIds?.includes(p.id))||state.ledger.some(r=>r.type==='pinjam'&&r.chargeId===c.id);
     entry(c.date,c.id,cardLabel(c.cardId)+' / '+c.note,[[linked?2110:9990,c.amount],[2100,-c.amount]],linked?'':'Alokasi pembelian/pinjaman belum lengkap');
@@ -71,6 +73,7 @@ function buildBookReport(state,range,today){
   warnings.push('Piutang dan status lunas memakai status terakhir saat ekspor. Tanggal pencairan yang belum tersedia diasumsikan sama dengan tanggal penjualan pada jurnal dan arus kas indikatif.');
   warnings.push('Persediaan pada lembar Posisi tercatat dan Persediaan adalah posisi saat ekspor, bukan rekonstruksi stok pada akhir periode lama.');
   warnings.push('Pinjaman dan pembayaran pokok tidak masuk laba rugi. Bunga/admin masuk beban sesuai tanggal cetak, termasuk koreksi pembukuan.');
+  warnings.push('Beban terjadwal diakui otomatis berdasarkan jadwal pemilik, bukan bukti pembayaran. Jurnal memakai akun beban terjadwal belum dikonfirmasi; tidak mengurangi kas indikatif.');
   warnings.push('Jurnal stok menggunakan HPP dan jumlah masuk saat ekspor. Selisih HPP historis penjualan, penghapusan/koreksi stok, dan alokasi pembiayaan harus direkonsiliasi.');
   const unknown=state.sales.filter(s=>within(s.date)&&s.status==='unknown');if(unknown.length)warnings.push(unknown.length+' penjualan belum diketahui status pencairannya.');
   const assumed=state.cardPayments.filter(p=>within(p.date)&&p.assumption);if(assumed.length)warnings.push(assumed.length+' pembayaran kartu adalah asumsi otomatis pemilik, bukan konfirmasi bank.');
@@ -94,6 +97,16 @@ function workbookForBooks(report,Excel){
   const subtitle=(range.start==='0001-01-01'?'Seluruh riwayat':dayFirstDate(range.start))+' s.d. '+dayFirstDate(range.end)+' | Rupiah | Ekspor '+dayFirstDate(today);
   const make=(name,headers,rows,nums=[],note=subtitle)=>reportSheet(wb,name,headers,rows,note,nums);
   const pnl=make('Laba rugi',['Pos','Periode terpilih','Pembanding','Selisih'],[],[2,3,4],subtitle+(prior?' | Pembanding '+dayFirstDate(prior.start)+' - '+dayFirstDate(prior.end):' | Tanpa pembanding'));
+  const capital=capitalTotals(state,range.end,range.start),openingCapital=capitalTotals(state,addCalendarDays(range.start,-1));
+  make('Mutasi modal',['Pos','Nominal','Catatan'],[
+    ['Setoran neto sebelum periode',openingCapital.net,'Setoran modal dikurangi prive sebelum awal periode'],
+    ['Setoran modal periode',capital.periodDeposits,'Penerimaan pemilik, bukan omzet'],
+    ['Prive periode',-capital.periodWithdrawals,'Penarikan pemilik, bukan beban operasional'],
+    ['Setoran neto akhir periode',capital.net,'Bukan keseluruhan ekuitas; belum termasuk laba ditahan dan penyesuaian'],
+    ['Laba bersih periode sebelum pajak',m.profit,'Informasi terpisah; tidak ditambahkan otomatis ke saldo setoran'],
+    ['Pinjaman diterima periode',capital.periodLoans,'Utang, bukan modal disetor']
+  ],[2]);
+  make('Jadwal beban',['ID jadwal','Keterangan','Kategori','Pengulangan','Nominal','Tanggal pertama','Berlaku mulai','Batas riwayat','Tanggal terakhir','Status'],(state.business.expenseSchedules||[]).flatMap(s=>s.versions.map(v=>[s.id,v.name,v.category,expenseFrequency[v.frequency],v.amount,dayFirstDate(v.startDate),dayFirstDate(v.from),dayFirstDate(v.through),dayFirstDate(v.endDate),s.archived?'Dihentikan':s.active?'Aktif':'Dijeda'])),[5],subtitle+' | Definisi dan riwayat jadwal; hanya tanggal yang sudah tiba masuk beban');
   make('Posisi tercatat',['Pos','Nominal','Catatan'],[
     ['Persediaan positif',sum(state.inventory,p=>Math.max(0,p.qty)*p.cost),'Posisi '+dayFirstDate(today)],
     ['Dana belum cair',sum(state.sales.filter(s=>s.status==='pending'),s=>s.price*s.qty-s.fee),'Status terakhir, seluruh riwayat'],
@@ -105,12 +118,12 @@ function workbookForBooks(report,Excel){
   make('Arus kas indikatif',['Tanggal','Referensi','Keterangan','Penerimaan','Pengeluaran','Aktivitas','Asumsi'],cash.map(r=>[dayFirstDate(r.date),r.id,r.note,r.debit,r.credit,r.activity,r.assumption||'Belum direkonsiliasi rekening']),[4,5],subtitle+' | Bukan saldo atau arus kas bank terverifikasi');
   const saleRows=selected.map((s,i)=>{const p=byId.get(s.productId),r=i+6;return [s.id,dayFirstDate(s.date),p?.name||s.productId,p?.imei||'',s.channel,s.buyer,s.qty,s.price,{formula:`G${r}*H${r}`,result:s.qty*s.price},s.cost,{formula:`G${r}*J${r}`,result:s.qty*s.cost},s.fee,s.shipping||0,{formula:`I${r}-K${r}-L${r}-M${r}`,result:s.qty*(s.price-s.cost)-s.fee-(s.shipping||0)},({paid:'Lunas',pending:'Belum cair',unknown:'Belum diketahui'})[s.status],s.settlementDate?dayFirstDate(s.settlementDate):'Tidak tercatat',s.invoice?'Ada':'Tidak'];});
   make('Penjualan',['ID','Tanggal','Produk','IMEI','Channel','Pembeli','Unit','Harga per unit','Omzet','HPP per unit','Total HPP','Admin','Ongkir','Laba transaksi','Status dana','Tanggal cair','Lampiran invoice'],saleRows,[7,8,9,10,11,12,13,14]);
-  make('Beban',['Referensi','Tanggal','Kategori','Keterangan','Nominal','Sumber'],out.map(e=>[e.id,dayFirstDate(e.date),e.category,e.name||e.note,e.amount,e.source]),[5]);
+  make('Beban',['Referensi','Tanggal','Kategori','Keterangan','Nominal','Sumber'],out.map(e=>[e.id,dayFirstDate(e.date),e.category,e.name||e.note,e.amount,e.source==='scheduled-expense'?'Terjadwal / pembayaran belum dikonfirmasi':e.source]),[5]);
   const aggregate=(sheet,col,count)=>count?`SUM('${sheet}'!${col}6:${col}${count+5})`:'0';
   const pnlRows=[['Omzet',aggregate('Penjualan','I',selected.length),m.revenue,prior?.revenue],['Harga pokok penjualan',aggregate('Penjualan','K',selected.length),m.hpp,prior?.hpp],['Laba kotor','B6-B7',m.revenue-m.hpp,prior?prior.revenue-prior.hpp:null],['Biaya marketplace',aggregate('Penjualan','L',selected.length),m.fee,prior?.fee],['Ongkir penjualan',aggregate('Penjualan','M',selected.length),m.shipping,prior?.shipping],['Laba transaksi','B8-B9-B10',m.profit+m.expense,prior?prior.profit+prior.expense:null],['Beban operasional dan cicilan',aggregate('Beban','E',out.length),m.expense,prior?.expense],['Laba bersih sebelum pajak','B11-B12',m.profit,prior?.profit]];
   pnlRows.forEach(([name,formula,result,old],i)=>{const r=i+6;pnl.getRow(r).values=[name,{formula,result},old??null,old==null?null:{formula:`B${r}-C${r}`,result:result-old}];pnl.getRow(r).height=28;for(const c of [2,3,4])pnl.getCell(r,c).numFmt='#,##0.00;[Red](#,##0.00);"-"';if([8,11,13].includes(r))pnl.getRow(r).font={bold:true,color:{argb:'FF187457'}};});
-  const capital=state.ledger.filter(r=>within(r.date));
-  make('Modal dan pinjaman',['ID','Tanggal','Jenis','Keterangan','Nominal','Kartu','ID pembiayaan','ID pembayaran','Asumsi'],capital.map(r=>[r.id,dayFirstDate(r.date),ledgerLabels[r.type]||r.type,r.note,r.amount,cardLabel(r.cardId),r.chargeId||'',r.paymentId||'',r.assumption?'Asumsi pemilik':'Catatan pengguna']),[5]);
+  const capitalRows=state.ledger.filter(r=>within(r.date));
+  make('Modal dan pinjaman',['ID','Tanggal','Jenis','Keterangan','Nominal','Kartu','ID pembiayaan','ID pembayaran','Asumsi'],capitalRows.map(r=>[r.id,dayFirstDate(r.date),ledgerLabels[r.type]||r.type,r.note,r.amount,cardLabel(r.cardId),r.chargeId||'',r.paymentId||'',r.assumption?'Asumsi pemilik':'Catatan pengguna']),[5]);
   make('Pembelian stok',['ID','Tanggal masuk','Produk','IMEI','Supplier','Unit masuk','HPP per unit','Total pembelian','Sumber dana'],state.inventory.filter(p=>within(p.date)).map((p,i)=>[p.id,dayFirstDate(p.date),p.name,p.imei||'',p.supplier,p.purchasedQty,p.cost,{formula:`F${i+6}*G${i+6}`,result:p.purchasedQty*p.cost},p.payMethod==='cash'?'Tunai / transfer':cardLabel(p.payMethod)]),[6,7,8]);
   make('Persediaan',['ID','Tanggal masuk','Produk','Varian','IMEI','Unit masuk','Sisa unit','HPP per unit','Nilai sisa positif','Harga rencana','Status'],state.inventory.map((p,i)=>[p.id,dayFirstDate(p.date),p.name,p.variant,p.imei||'',p.purchasedQty,p.qty,p.cost,{formula:`MAX(0,G${i+6})*H${i+6}`,result:Math.max(0,p.qty)*p.cost},p.price||null,p.deletedAt?'Dihapus / arsip':p.qty>0?'Tersedia':'Habis']),[6,7,8,9,10],'POSISI SAAT EKSPOR '+dayFirstDate(today)+' | Seluruh stok dan arsip, bukan saldo historis akhir periode');
   const mutations=[...state.cardCharges.filter(c=>within(c.date)).map(c=>[c.id,dayFirstDate(c.date),cardLabel(c.cardId),'Pembiayaan',c.note,c.amount,0,c.productId||'',c.installment?'Cicilan':'Tagihan biasa']),...state.cardPayments.filter(p=>within(p.date)).map(p=>[p.id,dayFirstDate(p.date),cardLabel(p.cardId),'Pembayaran',p.note,0,p.amount,p.installmentChargeId||'',p.assumption?'Asumsi otomatis':'Catatan pengguna'])];

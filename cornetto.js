@@ -1,5 +1,5 @@
 'use strict';
-const TODAY = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Jakarta'});
+let TODAY = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Jakarta'});
 const labels = {dashboard:'Ringkasan',stock:'Inventori',sales:'Penjualan',books:'Pembukuan',cards:'Kartu kredit',tax:'Pajak',settings:'Pengaturan',data:'Data & backup'};
 const icons = {dashboard:'layout-dashboard',stock:'package',sales:'shopping-bag',books:'book-open'};
 const fees = Object.assign(Object.create(null),{Shopee:0.065,Tokopedia:0.05,WhatsApp:0,Toko:0});

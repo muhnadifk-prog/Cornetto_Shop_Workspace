@@ -6,7 +6,7 @@ function parseDayFirstDate(value){
   const iso=`${match[3]}-${match[2]}-${match[1]}`;
   return CardSchedule.validDate(iso)?iso:'';
 }
-function dayFirstField(label,name,iso){return `<label class="form-field"><span>${esc(label)} (dd/mm/yyyy)</span><input type="hidden" name="${name}" value="${esc(iso)}"><input type="text" data-date="${name}" inputmode="numeric" placeholder="dd/mm/yyyy" value="${dayFirstDate(iso)}" maxlength="10" required autocomplete="off"></label>`;}
+function dayFirstField(label,name,iso){return field(label,name,'date',iso,`required min="2000-01-01" max="${TODAY}"`);}
 function validateDayFirstInput(input){
   if(/^\d{8}$/.test(input.value))input.value=input.value.replace(/^(\d{2})(\d{2})(\d{4})$/,'$1/$2/$3');
   const iso=parseDayFirstDate(input.value),valid=iso&&iso>='2000-01-01'&&iso<=TODAY;

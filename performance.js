@@ -45,11 +45,11 @@ drawChart=function(){
     c.dataset.selectedKey=entries[selected].key;
   }
   const pick=e=>entries.length===1?0:Math.max(0,Math.min(entries.length-1,Math.round((e.clientX-c.getBoundingClientRect().left-left)/(w-left-right)*(entries.length-1))));
-  function select(i){selected=i;selectedChartKey=entries[i].key;hover=-1;el('chartDate').value=monthly?entries[i].key+'-01':entries[i].key;paint();}
+  function select(i){selected=i;selectedChartKey=entries[i].key;hover=-1;el('chartDate').value=monthly?entries[i].key+'-01':entries[i].key;if(typeof syncDateControls==='function')syncDateControls(el('main'));paint();}
   c.onpointermove=e=>{if(e.pointerType!=='touch'){hover=pick(e);paint();}};
   c.onpointerleave=()=>{hover=-1;paint();};c.onclick=e=>select(pick(e));
   c.onkeydown=e=>{let i=selected;if(e.key==='ArrowLeft')i--;else if(e.key==='ArrowRight')i++;else if(e.key==='Home')i=0;else if(e.key==='End')i=entries.length-1;else return;e.preventDefault();select(Math.max(0,Math.min(entries.length-1,i)));};
-  const dateInput=el('chartDate');dateInput.min=start;dateInput.max=end;
+  const dateInput=el('chartDate');dateInput.min=start;dateInput.max=end;if(dateInput._flatpickr)dateInput._flatpickr.set({minDate:start,maxDate:end});
   dateInput.onchange=()=>{const key=dateInput.value.slice(0,monthly?7:10),i=entries.findIndex(b=>b.key===key);if(i>=0)select(i);};
   select(selected);
 };
