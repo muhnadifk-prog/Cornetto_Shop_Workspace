@@ -109,6 +109,15 @@ function validateSnapshot(d){
       }
     }
   }
+  if(d.business.expenseCorrections!==undefined){
+    const keys=new Set();
+    if(!Array.isArray(d.business.expenseCorrections))throw Error('Koreksi beban tidak valid.');
+    for(const r of d.business.expenseCorrections){
+      const key=r.chargeId+':'+r.number;
+      if(keys.has(key)||!d.cardCharges.some(c=>c.id===r.chargeId&&c.installment?.schedule.some(row=>row.number===r.number))||(!r.deleted&&(!CardSchedule.validDate(r.date)||r.date>TODAY||!installmentMoney(r.amount)||typeof r.name!=='string'||typeof r.category!=='string')))throw Error('Koreksi beban tidak valid.');
+      keys.add(key);
+    }
+  }
   validateInstallments(d);
   return d;
 }
@@ -142,5 +151,3 @@ async function startWorkspace(){
   catch(err){storageFailed=true;el('main').textContent='Data tidak dapat dibuka: '+err.message;updateStorageBadge();}
   finally{document.body.inert=false;window.cornettoReady=true;window.dispatchEvent(new Event('cornetto:ready'));}
 }
-startWorkspace();
-

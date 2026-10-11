@@ -25,7 +25,7 @@ run("inventory[1].condition='Baru';inventory[1].warranty='Distributor'");assert.
 const before=run('JSON.stringify(snapshot())');run('inventoryGroups(inventory);inventoryTotals(inventory);inventoryResults(inventory)');assert.equal(run('JSON.stringify(snapshot()).replace(/"exportedAt":"[^"]+"/,"X")'),before.replace(/"exportedAt":"[^"]+"/,'X'));
 // Limit is descriptive, not an authorization gate. Invalid cards still fail.
 run(`formError=message=>{globalThis.error=message;return false;};cards=[{id:'cc',name:'Card',bank:'Bank',limit:100,active:true,dueMode:'manual',due:'',color:'#187457'}];
-var purchase={name:'New phone',variant:'Black',qty:1,cost:1000,price:1200,brand:'Apple',category:'Handphone',condition:'Baru',warranty:'Resmi',supplierId:'s',payMethod:'cc'};`);
+var purchase={date:TODAY,name:'New phone',variant:'Black',qty:1,cost:1000,price:1200,brand:'Apple',category:'Handphone',condition:'Baru',warranty:'Resmi',supplierId:'s',payMethod:'cc'};`);
 assert.equal(run('commitStock(purchase)'),true);assert.equal(run('availableCardLimit(cards[0])'),-900);
 assert.equal(run('totalAvailableCardLimit()'),-900);
 run("cardGroups=[{id:'g',name:'Shared',limit:10}];cards[0].groupId='g';cards.push({...cards[0],id:'sibling',name:'Sibling'});");
@@ -49,4 +49,3 @@ for(const name of ['cornetto-modules.js','purchase-finance.js','card-groups.js']
  assert.doesNotMatch(source,/throw Error\('Sisa limit|melebihi sisa limit|limit<cardBalance|groupLimit<cardBalance/);
 }
 console.log('PASS: grouped identity, weighted stock HPP, all-result summary, sold/empty/negative stock, IMEI/date filtering, read-only grouping, uncapped own/shared CC, invalid card and amount guards.');
-

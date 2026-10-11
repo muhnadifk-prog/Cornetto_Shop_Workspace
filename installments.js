@@ -36,8 +36,8 @@ function installmentRemaining(c,row,exclude=''){return Math.max(0,rupiah(cents(i
 function installmentFees(c,asOf=TODAY){return c.installment?sum(c.installment.schedule.filter(r=>r.statementDate&&r.statementDate<=asOf),r=>r.admin+r.interest):0;}
 function installmentBalance(c){return c.amount-openingInstallmentPrincipal(c)+installmentFees(c)-sum(cardPayments.filter(p=>p.installmentChargeId===c.id),p=>p.amount);}
 function ordinaryCardBalance(id,exclude=''){return sum(cardCharges.filter(c=>c.cardId===id&&!c.installment),c=>c.amount)-sum(cardPayments.filter(p=>p.cardId===id&&!p.installmentChargeId&&p.id!==exclude),p=>p.amount);}
-function installmentExpenses(){return installmentCharges().flatMap(c=>c.installment.schedule.filter(r=>r.statementDate&&r.statementDate<=TODAY&&r.admin+r.interest>0).map(r=>({date:r.statementDate,amount:r.admin+r.interest,category:'Biaya cicilan kartu',name:cardName(c.cardId)+' / '+c.note+' / '+r.number+'/'+c.installment.months}))); }
-function reportExpenses(){return [...expenses,...installmentExpenses()];}
+function installmentExpenses(){return installmentCharges().flatMap(c=>c.installment.schedule.filter(r=>r.statementDate&&r.statementDate<=TODAY&&(r.admin+r.interest>0||(business.expenseCorrections||[]).some(x=>x.chargeId===c.id&&x.number===r.number))).flatMap(r=>{const correction=(business.expenseCorrections||[]).find(x=>x.chargeId===c.id&&x.number===r.number);return correction?.deleted?[]:[{date:r.statementDate,amount:r.admin+r.interest,category:'Biaya cicilan kartu',name:cardName(c.cardId)+' / '+c.note+' / '+r.number+'/'+c.installment.months,...correction,bookKey:'installment:'+c.id+':'+r.number,chargeId:c.id,number:r.number,source:'installment-fee'}];}));}
+function reportExpenses(){return [...expenses.map((e,i)=>({...e,bookKey:'expense:'+i})),...installmentExpenses()];}
 function installmentUpcoming(){
   return installmentCharges().flatMap(c=>c.installment.schedule.filter(r=>installmentRemaining(c,r)>0).map(row=>({charge:c,row}))).sort((a,b)=>a.row.dueDate.localeCompare(b.row.dueDate));
 }
@@ -51,6 +51,7 @@ function attachInstallment(chargeId,data){
   const plan=buildInstallment(c.amount,data);
   if(plan.schedule[0].statementDate<c.date)throw Error('Cetak pertama tidak boleh mendahului tanggal pembelian.');
   c.installment=plan;c.autoPost=data.autoPost===true;c.autoSkip=[];
+  business.expenseCorrections=(business.expenseCorrections||[]).filter(r=>r.chargeId!==c.id||r.number<=plan.months);
 }
 function installmentLedgerId(paymentId){return 'ledger-'+paymentId;}
 function syncInstallmentLedger(payment,c,row){
@@ -69,6 +70,7 @@ function removeInstallment(id){
   const c=cardCharges.find(c=>c.id===id&&c.installment);
   if(!c||c.installment.opening||cardPayments.some(p=>p.installmentChargeId===id))throw Error('Jadwal impor atau jadwal yang sudah memiliki pembayaran tidak dapat dihapus.');
   delete c.installment;delete c.autoPost;delete c.autoSkip;
+  business.expenseCorrections=(business.expenseCorrections||[]).filter(r=>r.chargeId!==id);
 }
 function removeInstallmentPayment(id){
   const p=cardPayments.find(p=>p.id===id);if(!p)return;
@@ -98,4 +100,3 @@ function validateInstallments(d){
     if(total>cents(installmentRowTotal(row)))throw Error('Pembayaran cicilan melebihi tagihan.');
   }
 }
-
