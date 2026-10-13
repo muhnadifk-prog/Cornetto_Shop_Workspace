@@ -51,4 +51,17 @@ assert.equal(run("buildBookReport(funded,{start:'2026-01-01',end:TODAY},TODAY).m
 assert.equal(run("pickerDate('10/11/2026','d/m/Y').getMonth()"),10);
 assert.equal(run("pickerDate('31/02/2026','d/m/Y')"),undefined);
 assert.equal(run("pickerDate('2026-10-11','Y-m-d').getDate()"),11);
-console.log('PASS: recurring expense history, month-end/leap dates, corrections, pause/resume, unconfirmed-payment journal, capital position, linked cash advances without duplicates, 36 installments, strict day-first dates.');
+run("var formHtml='';openDrawer=(title,body)=>{formHtml=body};document.getElementById=()=>({dataset:{}});expenseScheduleForm()");
+assert.doesNotMatch(run('formHtml'),/<span>[^<]*(?:dd\/mm\/yyyy|opsional)/);
+assert.match(run('formHtml'),/<span>Tanggal pertama<\/span>/);
+assert.match(run('formHtml'),/<span>Tanggal terakhir<\/span>/);
+assert.match(run('formHtml').match(/<input name="startDate"[^>]*>/)[0],/required/);
+assert.doesNotMatch(run('formHtml').match(/<input name="endDate"[^>]*>/)[0],/required/);
+run("updateInstallmentFields=()=>{};updateStockImeiField=()=>{};stockForm()");
+assert.doesNotMatch(run('formHtml'),/<span>[^<]*(?:dd\/mm\/yyyy|opsional)/);
+assert.match(run('formHtml'),/<span>Tanggal masuk<\/span>/);
+assert.match(run('formHtml'),/<span>Harga jual per unit \(Rp\)<\/span>/);
+assert.doesNotMatch(run('formHtml').match(/<input[^>]*name="price"[^>]*>/)[0],/required/);
+assert.doesNotMatch(run('formHtml').match(/<input[^>]*name="imei"[^>]*>/)[0],/required/);
+assert.match(run('formHtml').match(/<input[^>]*name="date"[^>]*>/)[0],/required/);
+console.log('PASS: recurring expense history, month-end/leap dates, corrections, pause/resume, unconfirmed-payment journal, capital position, linked cash advances without duplicates, 36 installments, strict day-first dates, concise labels without changing optional fields.');

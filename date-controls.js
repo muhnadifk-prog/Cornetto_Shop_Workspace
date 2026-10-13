@@ -49,8 +49,6 @@ function syncDateControls(root=document){
   });
 }
 function destroyDateControls(root){root?.querySelectorAll('input[data-calendar]').forEach(input=>input._flatpickr?.destroy());}
-const fieldBeforeDates=field;
-field=function(label,name,type,value='',extra=''){return fieldBeforeDates(type==='date'&&!label.includes('dd/mm/yyyy')?label+' (dd/mm/yyyy)':label,name,type,value,extra);};
 const renderBeforeDates=render;
 render=function(){destroyDateControls(el('main'));renderBeforeDates();syncDateControls(el('main'));};
 const drawerBeforeDates=openDrawer;
