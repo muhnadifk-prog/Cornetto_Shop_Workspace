@@ -25,10 +25,13 @@ function commitSaleEdit(id,d,baseline){
   const extra=p===old?qty-s.qty:qty;
   if(extra>Math.max(0,p.qty))throw Error('Jumlah penjualan melebihi stok tersedia.');
   const cost=p===old?s.cost:p.cost;
+  const settlementDate=d.status==='paid'?(s.status==='paid'?s.settlementDate:TODAY):undefined;
+  if(settlementDate&&settlementDate<d.date)throw Error('Tanggal penjualan tidak boleh setelah tanggal pencairan.');
   // Only the stock delta changes; historical fees, purchase funding and attachments stay intact.
   if(!old.deletedAt)old.qty+=s.qty;
   if(!p.deletedAt)p.qty-=qty;
   Object.assign(s,{productId:p.id,date:d.date,qty,price,cost,fee,shipping,channel:d.channel,channelId:ch?.id||s.channelId,buyer:d.buyer.trim(),status:d.status});
+  if(settlementDate)s.settlementDate=settlementDate;else delete s.settlementDate;
 }
 function updateSaleEditEstimate(f){
   const s=sales.find(s=>s.id===f.dataset.id),p=productById(f.elements.productId.value);if(!s||!p)return;
@@ -41,4 +44,3 @@ document.addEventListener('submit',e=>{
   const f=e.target;if(f.id!=='saleEditForm')return;e.preventDefault();
   try{commitSaleEdit(f.dataset.id,Object.fromEntries(new FormData(f)),saleEditBaseline);const finance=f.elements.financePurchase.checked,productId=f.elements.productId.value;saveDemo();closeDrawer();render();if(finance)purchaseFinanceForm(productId);else toast('Penjualan diperbarui.');}catch(err){formError(err.message);}
 });
-

@@ -36,6 +36,7 @@ function installmentRemaining(c,row,exclude=''){return Math.max(0,rupiah(cents(i
 function installmentFees(c,asOf=TODAY){return c.installment?sum(c.installment.schedule.filter(r=>r.statementDate&&r.statementDate<=asOf),r=>r.admin+r.interest):0;}
 function installmentBalance(c){return c.amount-openingInstallmentPrincipal(c)+installmentFees(c)-sum(cardPayments.filter(p=>p.installmentChargeId===c.id),p=>p.amount);}
 function ordinaryCardBalance(id,exclude=''){return sum(cardCharges.filter(c=>c.cardId===id&&!c.installment),c=>c.amount)-sum(cardPayments.filter(p=>p.cardId===id&&!p.installmentChargeId&&p.id!==exclude),p=>p.amount);}
+function ordinaryConversionBalance(charge){return ordinaryCardBalance(charge.cardId)+sum(cardPayments.filter(p=>p.source==='auto-sale'&&p.purchaseChargeId===charge.id),p=>p.amount);}
 function installmentExpenses(){return installmentCharges().flatMap(c=>c.installment.schedule.filter(r=>r.statementDate&&r.statementDate<=TODAY&&(r.admin+r.interest>0||(business.expenseCorrections||[]).some(x=>x.chargeId===c.id&&x.number===r.number))).flatMap(r=>{const correction=(business.expenseCorrections||[]).find(x=>x.chargeId===c.id&&x.number===r.number);return correction?.deleted?[]:[{date:r.statementDate,amount:r.admin+r.interest,category:'Biaya cicilan kartu',name:cardName(c.cardId)+' / '+c.note+' / '+r.number+'/'+c.installment.months,...correction,bookKey:'installment:'+c.id+':'+r.number,chargeId:c.id,number:r.number,source:'installment-fee'}];}));}
 function reportExpenses(){return [...expenses.map((e,i)=>({...e,bookKey:'expense:'+i})),...installmentExpenses(),...(typeof scheduledExpenseRows==='function'?scheduledExpenseRows(snapshot(),TODAY):[])];}
 function installmentUpcoming(){
@@ -47,7 +48,7 @@ function attachInstallment(chargeId,data){
   if(c.installment?.opening)throw Error('Cicilan impor dengan saldo awal hanya dapat diperbaiki lewat daftar pencocokan.');
   if(cardPayments.some(p=>p.installmentChargeId===c.id))throw Error('Cicilan sudah memiliki pembayaran. Koreksi pembayaran terkait sebelum mengubah jadwal.');
   // Existing unallocated payments cannot be silently reclassified as installment payments.
-  if(!c.installment&&c.amount>ordinaryCardBalance(c.cardId)+0.000001)throw Error('Pembelian ini mungkin sudah dibayar. Catat hanya pokok yang masih terutang; jangan menggandakan pembelian lama.');
+  if(!c.installment&&c.amount>ordinaryConversionBalance(c)+0.000001)throw Error('Pembelian ini mungkin sudah dibayar. Catat hanya pokok yang masih terutang; jangan menggandakan pembelian lama.');
   const plan=buildInstallment(c.amount,data);
   if(plan.schedule[0].statementDate<c.date)throw Error('Cetak pertama tidak boleh mendahului tanggal pembelian.');
   c.installment=plan;c.autoPost=data.autoPost===true;c.autoSkip=[];

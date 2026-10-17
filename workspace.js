@@ -8,16 +8,18 @@ function emptyWorkspace(){
   taxProfile={type:'person',eligible:false,pkp:false,inclusive:true,rate:0.5,verified:false};taxAdjustments={};inputVat={};syncFees();
 }
 function snapshot(){return {app:'cornetto-workspace',version:4,exportedAt:new Date().toISOString(),inventory,sales,expenses,ledger,channels,suppliers,cards,cardCharges,cardPayments,taxPayments,business,taxProfile,taxAdjustments,inputVat,migration,legacyArchive,cardGroups};}
-function applyState(d){({inventory,sales,expenses,ledger,channels,suppliers,cards,cardCharges,cardPayments,taxPayments,business,taxProfile,taxAdjustments,inputVat,migration,legacyArchive}=d);cardGroups=d.cardGroups||[];inventory.forEach(p=>{if(p.date)p.age=Math.max(0,Math.floor((Date.parse(TODAY+'T12:00:00Z')-Date.parse(p.date+'T12:00:00Z'))/86400000));});syncFees();}
+function applyState(d){({inventory,sales,expenses,ledger,channels,suppliers,cards,cardCharges,cardPayments,taxPayments,business,taxProfile,taxAdjustments,inputVat,migration,legacyArchive}=d);cardGroups=d.cardGroups||[];inventory.forEach(p=>{if(p.date)p.age=Math.max(0,Math.floor((Date.parse(TODAY+'T12:00:00Z')-Date.parse(p.date+'T12:00:00Z'))/86400000));});syncFees();if(typeof queueSaleRepaymentReconciliation==='function')queueSaleRepaymentReconciliation();}
 function openDatabase(){return new Promise((resolve,reject)=>{const r=indexedDB.open('cornetto-workspace-private-v1',1);r.onupgradeneeded=()=>r.result.createObjectStore('workspace');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);r.onblocked=()=>reject(Error('Tutup tab workspace lainnya lalu muat ulang.'));});}
 function readStored(key){return new Promise((resolve,reject)=>{const r=db.transaction('workspace').objectStore('workspace').get(key);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});}
 function persist(d,recovery=false,syncOverride){return new Promise((resolve,reject)=>{
+  if(typeof reconcileSaleCardPayments==='function')reconcileSaleCardPayments(d);
   d={...d,version:4,cardGroups:d.cardGroups||[]};
   const expectedRevision=revision,tx=db.transaction('workspace','readwrite'),store=tx.objectStore('workspace'),r=store.get('current');let next;
   r.onsuccess=()=>{const prev=r.result;if((prev?.revision||0)!==expectedRevision){tx.abort();return;}next=expectedRevision+1;if(recovery&&prev)store.put(prev,'before-import');const sync=syncOverride!==undefined?syncOverride:prev?.sync?{...prev.sync,dirty:true}:null;store.put({revision:next,data:d,sync},'current');};
   tx.oncomplete=()=>{revision=next;window.dispatchEvent(new Event('cornetto:saved'));resolve();};tx.onerror=()=>reject(tx.error||Error('Penyimpanan gagal.'));tx.onabort=()=>reject(Error('Data berubah di tab lain atau penyimpanan gagal. Unduh backup lalu muat ulang.'));
 });}
 function saveDemo(){
+  if(typeof reconcileSaleCardPayments==='function')reconcileSaleCardPayments(snapshot());
   const data=structuredClone(snapshot());savePending++;updateStorageBadge();
   saveQueue=saveQueue.then(()=>persist(data)).then(()=>{storageFailed=false;}).catch(err=>{storageFailed=true;toast(err.message);}).finally(()=>{savePending--;updateStorageBadge();});
   return saveQueue;
@@ -119,6 +121,7 @@ function validateSnapshot(d){
     }
   }
   validateInstallments(d);
+  if(typeof validateSaleRepayments==='function')validateSaleRepayments(d);
   if(typeof validateExpenseSchedules==='function')validateExpenseSchedules(d);
   return d;
 }

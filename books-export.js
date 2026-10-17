@@ -77,7 +77,8 @@ function buildBookReport(state,range,today){
   warnings.push('Jurnal stok menggunakan HPP dan jumlah masuk saat ekspor. Selisih HPP historis penjualan, penghapusan/koreksi stok, dan alokasi pembiayaan harus direkonsiliasi.');
   const unknown=state.sales.filter(s=>within(s.date)&&s.status==='unknown');if(unknown.length)warnings.push(unknown.length+' penjualan belum diketahui status pencairannya.');
   const assumed=state.cardPayments.filter(p=>within(p.date)&&p.assumption);if(assumed.length)warnings.push(assumed.length+' pembayaran kartu adalah asumsi otomatis pemilik, bukan konfirmasi bank.');
-  const pending=state.migration?.installmentImport?.rows.filter(r=>r.status==='pending')||[];if(pending.length)warnings.push(pending.length+' baris impor cicilan belum dicocokkan; belum masuk utang aktif.');
+  const pending=state.migration?.installmentImport?.rows.filter(r=>r.status==='pending'&&!r.dismissed)||[];if(pending.length)warnings.push(pending.length+' baris impor cicilan belum dicocokkan; belum masuk utang aktif.');
+  if(typeof saleRepaymentPlans==='function'){const review=saleRepaymentPlans(state,today).rows.filter(r=>r.reason);if(review.length)warnings.push(review.length+' penjualan memerlukan pencocokan pembayaran tagihan biasa.');}
   if(state.inventory.some(p=>p.qty<0))warnings.push('Ada stok negatif. Nilai persediaan posisi memakai stok positif; periksa selisih kuantitas.');
   const debit=reportNumber(sum(journal,r=>r.debit)),credit=reportNumber(sum(journal,r=>r.credit));
   return {state,range,today,selected,out,allExpenses,journal,balances,m,prior,warnings,debit,credit,within,byId,cardLabel};

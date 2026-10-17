@@ -1,5 +1,5 @@
 'use strict';
-let installmentFilter='active',installmentMonth=TODAY.slice(0,7);
+let installmentFilter='active',installmentMonth='all';
 const installmentCurrency=n=>'Rp '+rupiah(cents(n)).toLocaleString('id-ID',{maximumFractionDigits:2});
 const installmentBookLine=(label,value,total=false)=>bookLine(label,value,total,installmentCurrency);
 function installmentInterestLabel(mode){return mode==='flat'?'Bunga flat per bulan (%)':mode==='monthly'?'Cicilan per bulan, di luar admin (Rp)':'Total bunga dari bank (Rp)';}
@@ -71,15 +71,14 @@ function installmentForm(id){
   updateInstallmentFields(el('installmentForm'));
 }
 function installmentView(){
-  const plans=installmentCharges().filter(c=>(selectedCard==='all'||c.cardId===selectedCard)&&(installmentFilter==='all'||(installmentFilter==='paid')===c.installment.schedule.every(r=>installmentRemaining(c,r)<=0)));
-  const monthly=installmentUpcoming().filter(({charge,row})=>row.dueDate?.startsWith(installmentMonth)&&(selectedCard==='all'||charge.cardId===selectedCard));
-  return `<div class="section-heading"><h2>Cicilan pembelian</h2><div class="heading-actions"><button class="icon-button" data-install-action="export" title="Ekspor jadwal cicilan" aria-label="Ekspor jadwal cicilan">${icon('download')}</button><button class="button" data-install-action="add">${icon('plus')}Atur cicilan</button></div></div>
-    <div class="table-toolbar"><div class="filters"><select id="paymentCard" aria-label="Filter kartu"><option value="all">Semua kartu</option>${cards.filter(c=>!c.legacyAllocation).map(c=>`<option value="${c.id}" ${c.id===selectedCard?'selected':''}>${esc(cardName(c.id))}</option>`).join('')}</select><select id="installmentFilter" aria-label="Status cicilan">${[['active','Belum lunas'],['paid','Lunas'],['all','Semua cicilan']].map(([id,label])=>`<option value="${id}" ${installmentFilter===id?'selected':''}>${label}</option>`).join('')}</select><input type="month" id="installmentMonth" aria-label="Bulan tagihan cicilan" value="${installmentMonth}"></div></div>
-    <div class="module-banner"><div>${icon('calendar-clock')}<span>Sisa tagihan jatuh tempo ${esc(installmentMonth)} <strong>${installmentCurrency(sum(monthly,({charge,row})=>installmentRemaining(charge,row)))}</strong></span></div><span>${monthly.length} angsuran</span></div>
-    <div class="module-table"><table><thead><tr><th>Pembelian</th><th>Kartu</th><th>Progres</th><th class="numeric">Sisa seluruh jadwal</th><th>Jatuh tempo berikutnya</th><th></th></tr></thead><tbody>${plans.map(c=>{
+  const plans=filteredInstallmentPlans(),info=cardActivityPage(plans,'installments');
+  return `<div class="section-heading card-activity-heading"><h2>Cicilan pembelian</h2><div class="heading-actions"><button class="icon-button" data-install-action="export" title="Ekspor jadwal cicilan" aria-label="Ekspor jadwal cicilan">${icon('download')}</button><button class="button" data-install-action="add">${icon('plus')}Atur cicilan</button></div></div>
+    <div class="table-toolbar card-activity-toolbar"><div class="filters"><select id="paymentCard" aria-label="Filter kartu">${cardFilterOptions()}</select><select id="installmentFilter" aria-label="Status cicilan">${[['active','Belum lunas'],['paid','Lunas'],['all','Semua cicilan']].map(([id,label])=>`<option value="${id}" ${installmentFilter===id?'selected':''}>${label}</option>`).join('')}</select>${cardMonthSelect('installmentMonth','Bulan tagihan cicilan',installmentMonth,installmentCharges().flatMap(c=>c.installment.schedule.map(r=>r.dueDate)))}</div></div>
+    ${installmentSummary(plans)}
+    <div class="module-table card-activity-table"><table><thead><tr><th>Pembelian</th><th>Kartu</th><th>Progres</th><th class="numeric">Sisa seluruh jadwal</th><th>Jatuh tempo berikutnya</th><th></th></tr></thead><tbody>${info.rows.map(c=>{
       const rows=c.installment.schedule,paid=rows.filter(r=>installmentRemaining(c,r)<=0).length,next=rows.find(r=>installmentRemaining(c,r)>0);
       return `<tr><td><strong>${esc(c.note)}</strong><div class="product-sub">Pokok ${installmentCurrency(c.amount)}</div></td><td>${esc(cardName(c.cardId))}</td><td>${paid} / ${rows.length} lunas</td><td class="numeric">${installmentCurrency(sum(rows,r=>installmentRemaining(c,r)))}</td><td>${next?cardDate(next.dueDate):'Lunas'}</td><td><button class="icon-button" data-install-action="detail" data-id="${c.id}" aria-label="Rincian cicilan ${esc(c.note)}" title="Rincian cicilan">${icon('arrow-up-right')}</button></td></tr>`;
-    }).join('')||'<tr><td colspan="6" class="empty">Belum ada cicilan pada filter ini.</td></tr>'}</tbody></table></div>${installmentImportView()}`;
+    }).join('')||'<tr><td colspan="6" class="empty">Belum ada cicilan pada filter ini.</td></tr>'}</tbody></table></div>${cardActivityPager(info,'installments','pembelian')}${installmentImportView()}`;
 }
 function installmentDetail(id){
   const c=cardCharges.find(c=>c.id===id&&c.installment);if(!c)return;
@@ -132,12 +131,11 @@ for(const event of ['input','change'])document.addEventListener(event,e=>{
   }
 });
 document.addEventListener('change',e=>{
-  if(e.target.id==='installmentFilter'){installmentFilter=e.target.value;render();}
-  if(e.target.id==='installmentMonth'){installmentMonth=e.target.value||TODAY.slice(0,7);render();}
+  if(e.target.id==='installmentFilter'){installmentFilter=e.target.value;installmentPage=1;render();}
+  if(e.target.id==='installmentMonth'){installmentMonth=e.target.value||'all';installmentPage=1;render();}
 });
 document.addEventListener('submit',e=>{
   const f=e.target;if(!['installmentForm','installmentPaymentForm'].includes(f.id))return;e.preventDefault();
   const d=f.id==='installmentForm'?installmentFormData(f):Object.fromEntries(new FormData(f));
   try{if(f.id==='installmentForm')attachInstallment(d.chargeId,d);else commitInstallmentPayment(d,f.dataset.id);finishModule(f.id==='installmentForm'?'Jadwal cicilan tersimpan.':'Pembayaran cicilan tersimpan.');}catch(err){formError(err.message);}
 });
-

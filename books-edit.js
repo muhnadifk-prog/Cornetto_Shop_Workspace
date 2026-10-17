@@ -22,6 +22,12 @@ function bookImpact(key,r,remove=false){
 }
 function bookEditForm(key,remove=false){
   const r=bookRecord(key);if(!r)return;
+  const payment=cardPayments.find(p=>p.id===r.paymentId);
+  if(payment&&typeof isSaleRepayment==='function'&&isSaleRepayment(payment)){
+    if(remove)confirmModule('Hapus pembayaran penjualan?','Pembayaran terkait dihapus dan pencatatan otomatis untuk penjualan ini dihentikan.','confirm-delete-payment',payment.id);
+    else saleRepaymentCorrectionForm(payment.id);
+    return;
+  }
   const capital=key.startsWith('ledger:');
   openDrawer(remove?'Hapus catatan?':capital?'Edit modal & pinjaman':'Edit beban operasional',`<form id="bookEditForm" data-key="${esc(key)}" data-remove="${remove}"><p class="book-edit-notice">${esc(bookImpact(key,r,remove))}</p>${remove?`<strong>${esc(r.name||r.note)}</strong>${bookLine('Nominal',r.amount)}`:`${dayFirstField('Tanggal','date',r.date)}${capital?selectField('Jenis','type',Object.entries(ledgerLabels).map(([v,label])=>`<option value="${v}" ${v===r.type?'selected':''}>${label}</option>`).join('')):field('Kategori','category','text',r.category,'required maxlength="100"')}${field('Keterangan','note','text',r.name||r.note||'','required maxlength="200"')}${field('Nominal (Rp)','amount','number',r.amount,'required min="0.01" step="0.01"')}`}${formFooter(remove?'Hapus catatan':'Simpan perubahan')}</form>`,'PEMBUKUAN');
   el('bookEditForm').dataset.baseline=bookBaseline(key);
@@ -74,6 +80,7 @@ function prepareBookEdit(state,key,d,baseline,remove=false){
     }else if(remove)next.ledger=next.ledger.filter(x=>x.id!==r.id);
     else Object.assign(r,{date:d.date,amount,type:d.type,note:d.note.trim()});
   }
+  if(typeof reconcileSaleCardPayments==='function')reconcileSaleCardPayments(next);
   validateSnapshot(next);return next;
 }
 document.addEventListener('click',e=>{const a=e.target.closest('[data-book-edit],[data-book-delete]');if(a)bookEditForm(a.dataset.bookEdit||a.dataset.bookDelete,!!a.dataset.bookDelete);});

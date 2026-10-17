@@ -1,0 +1,15 @@
+.card-activity-toolbar .filters{display:flex;align-items:center;flex-wrap:wrap;gap:10px}
+.card-activity-toolbar .filters select{height:42px;min-height:42px;box-sizing:border-box;margin:0;min-width:160px;max-width:100%;font-size:13px}
+.card-activity-toolbar .filters #paymentCard{min-width:210px}
+.card-activity-summary{line-height:1.7;gap:10px 22px}
+.card-activity-heading{flex-wrap:wrap;gap:12px}.card-activity-heading .heading-actions{width:auto;min-width:0;flex:0 1 auto}
+.card-activity-table table{width:100%;min-width:720px;table-layout:auto}
+.card-activity-table th,.card-activity-table td{vertical-align:middle}
+.card-activity-table .numeric{white-space:nowrap;font-variant-numeric:tabular-nums}
+.card-activity-table td:first-child{max-width:320px}
+.card-activity-table td{line-height:1.5}
+.card-activity-pager{gap:16px;flex-wrap:wrap}
+.repayment-review{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0;font-size:13px}
+.repayment-review-list{margin-top:20px}.repayment-review-list summary{cursor:pointer;padding:14px 0}
+.installment-import-archive{margin-top:20px;color:var(--muted);font-size:13px}.installment-import-archive summary{cursor:pointer;padding:12px 0}
+@media(max-width:600px){.card-activity-toolbar{align-items:stretch}.card-activity-toolbar .filters{width:100%;display:grid;grid-template-columns:minmax(0,1fr)}.card-activity-toolbar .filters select,.card-activity-toolbar .filters #paymentCard{width:100%;min-width:0}.card-activity-pager{align-items:flex-start}.repayment-review{align-items:flex-start;flex-wrap:wrap}}

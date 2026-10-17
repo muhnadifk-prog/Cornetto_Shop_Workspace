@@ -6,8 +6,8 @@ function commitPurchaseFinance(productId,data,baseline){
   if(existing.length>1)throw Error('Pembelian memiliki lebih dari satu catatan kartu. Periksa rincian sebelum mengubah pembiayaan.');
   const charge=existing[0],amount=charge?.amount??p.cost*p.purchasedQty;
   if(!card||!CardSchedule.validDate(p.date))throw Error('Pilih kartu dan tanggal pembelian yang valid.');
-  if(charge?.installment||cardPayments.some(pay=>pay.installmentChargeId===charge?.id))throw Error('Pembelian sudah memiliki jadwal cicilan. Buka rincian cicilan untuk mengubahnya.');
-  if(charge&&charge.amount>ordinaryCardBalance(charge.cardId)+0.000001)throw Error('Pembayaran lama belum dialokasikan. Periksa sisa pokok agar utang tidak tercatat ganda.');
+  if(charge?.installment||charge&&cardPayments.some(pay=>pay.installmentChargeId===charge.id))throw Error('Pembelian sudah memiliki jadwal cicilan. Buka rincian cicilan untuk mengubahnya.');
+  if(charge&&charge.amount>ordinaryConversionBalance(charge)+0.000001)throw Error('Pembayaran lama belum dialokasikan. Periksa sisa pokok agar utang tidak tercatat ganda.');
   const plan=buildInstallment(amount,data);
   if(plan.schedule[0].statementDate<p.date)throw Error('Cetak pertama tidak boleh mendahului tanggal pembelian.');
   const next=charge||{id:nextId('charge'),productId:p.id,date:p.date,amount,note:p.name+' / '+p.purchasedQty+' unit'};
@@ -31,4 +31,3 @@ document.addEventListener('submit',e=>{
   const f=e.target;if(f.id!=='purchaseFinanceForm')return;e.preventDefault();
   try{commitPurchaseFinance(f.dataset.product,installmentFormData(f),f.dataset.baseline);saveDemo();closeDrawer();render();toast('Pembelian terhubung ke cicilan. Penjualan dan jumlah stok tetap.');}catch(err){formError(err.message);}
 });
-
