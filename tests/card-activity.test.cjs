@@ -96,4 +96,8 @@ run("var imports={migration:{installmentImport:{fingerprint:'d7e9fc49eeaf0e40256
 assert.deepEqual(plain('imports.migration.installmentImport.rows.map(r=>!!r.dismissed)'),[true,true,false]);
 run("imports.migration.installmentImport.rows[0].dismissed=false;dismissDuplicateInstallmentImports(imports)");
 assert.equal(run('imports.migration.installmentImport.rows[0].dismissed'),false,'Manual restore survives reruns');
+run("migration={installmentImport:{asOf:'2026-09-01',rows:[{id:'excel-cicil-012',row:12,status:'pending',description:'Redmi A5',date:'2026-05-23',principal:4797000,paidMonths:3,months:24},{id:'excel-cicil-028',row:28,status:'pending',description:'iPhone duplicate',date:'2026-08-09',principal:11211000,paidMonths:0,months:12}]}};selectedCard='all';installmentFilter='active';installmentMonth='all';var beforeImportPanel=JSON.stringify([inventory,sales,cardCharges,cardPayments,ledger,migration]);html=installmentView()");
+assert.doesNotMatch(run('html'),/Impor cicilan Excel|data-import-installment|Entri dihapus/,'Legacy Excel matching panel no longer appears');
+assert.equal(run('JSON.stringify([inventory,sales,cardCharges,cardPayments,ledger,migration])'),run('beforeImportPanel'),'Hiding the import panel does not alter financing, inventory, or sales');
+assert.equal(run('filteredInstallmentPlans().length'),23,'Active installments stay visible');
 console.log('PASS: ten-row pagination, month/card/status filters, whole-filter summaries, idempotent repayments, manual matching, pending/unknown/installment exclusions, corrections/reversals, net cash caps, balanced journal, reversible duplicate removal.');

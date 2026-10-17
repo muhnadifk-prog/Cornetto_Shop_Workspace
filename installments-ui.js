@@ -78,7 +78,7 @@ function installmentView(){
     <div class="module-table card-activity-table"><table><thead><tr><th>Pembelian</th><th>Kartu</th><th>Progres</th><th class="numeric">Sisa seluruh jadwal</th><th>Jatuh tempo berikutnya</th><th></th></tr></thead><tbody>${info.rows.map(c=>{
       const rows=c.installment.schedule,paid=rows.filter(r=>installmentRemaining(c,r)<=0).length,next=rows.find(r=>installmentRemaining(c,r)>0);
       return `<tr><td><strong>${esc(c.note)}</strong><div class="product-sub">Pokok ${installmentCurrency(c.amount)}</div></td><td>${esc(cardName(c.cardId))}</td><td>${paid} / ${rows.length} lunas</td><td class="numeric">${installmentCurrency(sum(rows,r=>installmentRemaining(c,r)))}</td><td>${next?cardDate(next.dueDate):'Lunas'}</td><td><button class="icon-button" data-install-action="detail" data-id="${c.id}" aria-label="Rincian cicilan ${esc(c.note)}" title="Rincian cicilan">${icon('arrow-up-right')}</button></td></tr>`;
-    }).join('')||'<tr><td colspan="6" class="empty">Belum ada cicilan pada filter ini.</td></tr>'}</tbody></table></div>${cardActivityPager(info,'installments','pembelian')}${installmentImportView()}`;
+    }).join('')||'<tr><td colspan="6" class="empty">Belum ada cicilan pada filter ini.</td></tr>'}</tbody></table></div>${cardActivityPager(info,'installments','pembelian')}`;
 }
 function installmentDetail(id){
   const c=cardCharges.find(c=>c.id===id&&c.installment);if(!c)return;
