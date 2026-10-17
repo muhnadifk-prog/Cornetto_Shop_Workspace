@@ -1,5 +1,38 @@
 'use strict';
 let cardGroups=[];
+function cardDeleteButton(c){return `<button class="icon-button stock-delete" data-action="delete-card" data-id="${c.id}" title="Hapus ${esc(c.name)}" aria-label="Hapus ${esc(c.name)}">${icon('trash-2')}</button>`;}
+function prepareCardDelete(state,id,baseline){
+  const card=state.cards.find(c=>c.id===id);
+  if(!card||card.deletedAt)throw Error('Kartu sudah dihapus atau tidak ditemukan.');
+  if(JSON.stringify(card)!==baseline)throw Error('Data kartu berubah. Buka ulang konfirmasi hapus.');
+  const next=structuredClone(state),target=next.cards.find(c=>c.id===id);
+  // Keep the ID for historical funding, repayments and shared-limit balances.
+  target.deletedAt=new Date().toISOString();target.active=false;
+  return next;
+}
+function deletedCardHistory(){
+  const rows=cards.filter(c=>c.deletedAt&&(cardCharges.some(r=>r.cardId===c.id)||cardPayments.some(r=>r.cardId===c.id)));
+  if(!rows.length)return '';
+  return cardSection('deleted-history','Riwayat kartu yang dihapus',rows.map(c=>`<div class="expense-row"><div><strong>${esc(cardName(c.id))}</strong><p>Utang tersisa ${money(cardBalance(c.id))}</p></div><button class="button" data-action="card-detail" data-id="${c.id}">Detail ${icon('arrow-up-right')}</button><button class="button" data-action="pay-card" data-id="${c.id}" ${cardBalance(c.id)<=0?'disabled':''}>${icon('wallet')}Bayar tagihan</button></div>`).join(''));
+}
+function deleteCardForm(id){
+  const c=cards.find(c=>c.id===id);if(!c||c.deletedAt)return;
+  openDrawer('Hapus kartu?',`<form id="cardDeleteForm" data-id="${esc(id)}"><strong>${esc(cardName(id))}</strong><p class="stock-edit-note">Kartu dihapus dari daftar dan pilihan transaksi baru. Riwayat transaksi, utang, jadwal cicilan, serta pembayaran tetap disimpan dan tidak dianggap lunas. Penghapusan ini tidak bisa dibatalkan dari daftar kartu.</p><div class="detail-lines">${bookLine('Utang tersisa',cardBalance(id))}</div><p id="formError" class="form-error" role="alert"></p><div class="form-footer"><button type="button" class="button" data-action="cancel">Batal</button><button type="submit" class="button danger">${icon('trash-2')}Hapus kartu</button></div></form>`,'KARTU KREDIT');
+  el('cardDeleteForm').dataset.baseline=JSON.stringify(c);
+}
+document.addEventListener('submit',async e=>{
+  const f=e.target;if(f.id!=='cardDeleteForm')return;
+  e.preventDefault();if(f.dataset.saving)return;
+  const button=f.querySelector('button[type="submit"]');f.dataset.saving='true';button.disabled=true;
+  let saving=false;
+  try{
+    await saveQueue;if(storageFailed)throw Error('Penyimpanan belum siap. Backup data sebelum mencoba lagi.');
+    const next=prepareCardDelete(snapshot(),f.dataset.id,f.dataset.baseline);
+    validateSnapshot(next);savePending++;saving=true;updateStorageBadge();
+    await persist(next);applyState(next);closeDrawer();render();toast('Kartu dihapus. Riwayat dan tagihan tetap tersimpan.');
+  }catch(err){formError(err.message);}
+  finally{if(saving)savePending--;updateStorageBadge();delete f.dataset.saving;if(button.isConnected)button.disabled=false;}
+});
 function cardGroup(c){return cardGroups.find(g=>g.id===c.groupId);}
 function groupBalance(id){return sum(cards.filter(c=>c.groupId===id),c=>cardBalance(c.id));}
 function nearestCardDueLabel(active){
@@ -32,10 +65,11 @@ function updateCardLimitForm(f){
 }
 function commitCardSettings(id,d){
   const existing=cards.find(c=>c.id===id),name=(d.name||'').trim(),bank=(d.bank||'').trim();
+  if(existing?.deletedAt)throw Error('Kartu sudah dihapus.');
   const shared=d.limitMode==='shared',fresh=shared&&d.groupId==='__new',group=shared?cardGroups.find(g=>g.id===d.groupId):null;
   const limit=shared?0:Number(d.limit),groupName=(d.groupName||'').trim(),groupLimit=Number(d.groupLimit);
   const schedule={dueMode:d.dueMode,statementDay:Number(d.statementDay),dueAfterDays:Number(d.dueAfterDays)};
-  if((id&&!existing)||!['own','shared'].includes(d.limitMode)||!name||name.length>60||!bank||bank.length>40||!/^([0-9]{4})?$/.test(d.last4||'')||!/^#[0-9a-f]{6}$/i.test(d.color||'')||cards.some(c=>c.id!==id&&c.name.toLowerCase()===name.toLowerCase()&&c.bank.toLowerCase()===bank.toLowerCase()))throw Error('Periksa nama kartu, bank, 4 digit terakhir, dan warna. Nama kartu pada bank yang sama harus unik.');
+  if((id&&!existing)||!['own','shared'].includes(d.limitMode)||!name||name.length>60||!bank||bank.length>40||!/^([0-9]{4})?$/.test(d.last4||'')||!/^#[0-9a-f]{6}$/i.test(d.color||'')||cards.some(c=>!c.deletedAt&&c.id!==id&&c.name.toLowerCase()===name.toLowerCase()&&c.bank.toLowerCase()===bank.toLowerCase()))throw Error('Periksa nama kartu, bank, 4 digit terakhir, dan warna. Nama kartu pada bank yang sama harus unik.');
   if(shared&&!fresh&&!group)throw Error('Pilih grup limit atau buat grup baru.');
   if(!shared&&(!validAmount(limit)||limit<=0))throw Error('Limit kartu harus berupa nominal positif.');
   if(fresh&&(!groupName||groupName.length>60||cardGroups.some(g=>g.name.toLowerCase()===groupName.toLowerCase())||!validAmount(groupLimit)||groupLimit<=0))throw Error('Nama grup harus unik dan limit gabungan harus positif.');
@@ -52,24 +86,25 @@ function cardSection(key,title,body){return `<details class="card-collapse" data
 document.addEventListener('toggle',e=>{const key=e.target.dataset?.cardSection;if(key){if(e.target.open)expandedCardSections.add(key);else expandedCardSections.delete(key);}},true);
 function sharedCardsView(){
   const byBank=(a,b)=>(a.bank||a.name).localeCompare(b.bank||b.name,'id',{sensitivity:'base'})||a.name.localeCompare(b.name,'id');
-  const ungrouped=cards.filter(c=>!c.groupId).sort(byBank);
+  const ungrouped=cards.filter(c=>!c.groupId&&!c.deletedAt).sort(byBank);
   const grouped=[...cardGroups].sort(byBank).map(g=>{
-    const members=cards.filter(c=>c.groupId===g.id).sort(byBank),legacy=members.filter(c=>c.legacyAllocation),balance=groupBalance(g.id);
+    const members=cards.filter(c=>c.groupId===g.id&&!c.deletedAt).sort(byBank),legacy=members.filter(c=>c.legacyAllocation),balance=groupBalance(g.id);
+    if(!members.length&&balance===0)return '';
     return `<section class="shared-limit-group"><div class="section-heading"><div><h2>${esc(g.name)}</h2><p>${members.filter(c=>!c.legacyAllocation).length} kartu / limit gabungan</p></div><button class="icon-button" data-group-action="edit" data-id="${g.id}" title="Edit limit ${esc(g.name)}" aria-label="Edit limit ${esc(g.name)}">${icon('pencil')}</button></div><div class="shared-limit-totals"><div><span>Limit bersama</span><strong>${money(g.limit)}</strong></div><div><span>Total utang grup</span><strong>${money(balance)}</strong></div><div><span>Sisa limit bersama</span><strong class="${balance>g.limit?'red-text':''}">${money(g.limit-balance)}</strong></div></div>${cardSection(g.id,'Rincian '+members.filter(c=>!c.legacyAllocation).length+' kartu',`${legacy.map(c=>`<div class="shared-legacy"><div><strong>Transaksi lama: kartu belum ditentukan</strong><p>${esc(g.name)} / utang ${money(cardBalance(c.id))} / tetap termasuk total grup</p></div><button class="button" data-action="card-detail" data-id="${c.id}">Rincian ${icon('arrow-up-right')}</button></div>`).join('')}<div class="credit-grid">${members.filter(c=>!c.legacyAllocation).map(creditTile).join('')}</div>`)}</section>`;
   }).join('');
-  return `<div class="section-heading"><h2>Fasilitas kartu</h2><button class="button" data-group-action="manage">${icon('settings-2')}Grup limit</button></div>`+cardSection('shared','Kartu dengan limit gabungan',grouped||emptyState('Belum ada grup limit.'))+cardSection('independent','Kartu dengan limit terpisah',`<div class="credit-grid">${ungrouped.map(creditTile).join('')}</div>`);
+  return `<div class="section-heading"><h2>Fasilitas kartu</h2><button class="button" data-group-action="manage">${icon('settings-2')}Grup limit</button></div>`+cardSection('shared','Kartu dengan limit gabungan',grouped||emptyState('Belum ada grup limit.'))+cardSection('independent','Kartu dengan limit terpisah',`<div class="credit-grid">${ungrouped.map(creditTile).join('')}</div>`)+deletedCardHistory();
 }
 function sharedGroupManager(){
-  const sources=cards.filter(c=>!c.groupId);
+  const sources=cards.filter(c=>!c.groupId&&!c.deletedAt);
   openDrawer('Grup limit',`${cardGroups.map(g=>`<div class="expense-row"><div><strong>${esc(g.name)}</strong><p>${money(g.limit)}</p></div><button class="icon-button" data-group-action="edit" data-id="${g.id}" aria-label="Edit limit ${esc(g.name)}" title="Edit limit">${icon('pencil')}</button></div>`).join('')}${sources.length?`<div class="group-setup"><h3>Pisahkan catatan bank</h3><label class="form-field"><span>Catatan asal</span><select id="sharedBankSource">${sources.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></label><button class="button" data-group-action="prepare">${icon('layers')}Siapkan pemisahan</button></div>`:''}<div class="form-footer"><button class="button" data-group-action="edit">${icon('plus')}Grup lain</button></div>`,'LIMIT BERSAMA');
 }
 function prepareSharedGroup(sourceId){
-  const source=cards.find(c=>c.id===sourceId&&!c.groupId);if(!source)return;
+  const source=cards.find(c=>c.id===sourceId&&!c.groupId&&!c.deletedAt);if(!source)return;
   openDrawer('Siapkan '+source.name,`<form id="sharedSetupForm" data-source="${source.id}">${field('Nama grup / bank','name','text',source.name,'required maxlength="60"')}<label class="form-field"><span>Nama kartu (satu per baris)</span><textarea name="cardNames" rows="6" required maxlength="3000"></textarea></label>${field('Limit gabungan (Rp)','limit','number',source.limit,'required min="1" step="1"')}<div class="storage-notice"><strong>Utang lama ${money(cardBalance(source.id))}</strong><p>Transaksi lama tetap berada di catatan belum teralokasi dan dihitung sekali dalam grup. Kartu baru dimulai tanpa transaksi; jadwal tagihan belum diisi.</p></div>${formFooter('Buat grup dan kartu')}</form>`,'KONFIRMASI PEMISAHAN KARTU');
 }
 function createSharedGroup(bank,sourceId,limit,names){
   const source=cards.find(c=>c.id===sourceId);
-  if(!source||source.groupId||!bank.trim()||bank.length>60||!Array.isArray(names)||!names.length||names.length>50||names.some(n=>!n.trim()||n.length>60)||new Set(names.map(n=>n.toLowerCase())).size!==names.length||!validAmount(limit)||limit<=0||cardGroups.some(g=>g.name.toLowerCase()===bank.toLowerCase()))throw Error('Grup sudah ada atau nama kartu/sumber/limit tidak valid.');
+  if(!source||source.deletedAt||source.groupId||!bank.trim()||bank.length>60||!Array.isArray(names)||!names.length||names.length>50||names.some(n=>!n.trim()||n.length>60)||new Set(names.map(n=>n.toLowerCase())).size!==names.length||!validAmount(limit)||limit<=0||cardGroups.some(g=>g.name.toLowerCase()===bank.toLowerCase()))throw Error('Grup sudah ada atau nama kartu/sumber/limit tidak valid.');
   if(names.some(name=>cards.some(c=>c.name.toLowerCase()===name.toLowerCase())))throw Error('Ada nama kartu yang sudah terdaftar. Periksa sebelum membuat grup.');
   const id=nextId('group');
   cardGroups.push({id,name:bank,limit});
@@ -107,4 +142,3 @@ document.addEventListener('submit',async e=>{
     finishModule('Grup limit tersimpan.');
   }catch(err){formError(err.message);}finally{if(button.isConnected)button.disabled=false;}
 });
-
