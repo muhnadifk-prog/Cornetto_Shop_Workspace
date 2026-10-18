@@ -3,6 +3,7 @@ function purchaseFinanceBaseline(productId){return JSON.stringify({product:produ
 function commitPurchaseFinance(productId,data,baseline){
   const p=productById(productId),existing=cardCharges.filter(c=>c.productId===productId),card=cards.find(c=>c.id===data.cardId&&c.active&&!c.legacyAllocation);
   if(!p||purchaseFinanceBaseline(productId)!==baseline)throw Error('Pembelian berubah. Buka ulang pengaturan cicilan.');
+  if(p.deletedAt)throw Error('Barang sudah dihapus. Cicilan baru tidak dapat ditambahkan.');
   if(existing.length>1)throw Error('Pembelian memiliki lebih dari satu catatan kartu. Periksa rincian sebelum mengubah pembiayaan.');
   const charge=existing[0],amount=charge?.amount??p.cost*p.purchasedQty;
   if(!card||!CardSchedule.validDate(p.date))throw Error('Pilih kartu dan tanggal pembelian yang valid.');
@@ -16,6 +17,7 @@ function commitPurchaseFinance(productId,data,baseline){
 }
 function purchaseFinanceForm(productId){
   const p=productById(productId),existing=cardCharges.filter(c=>c.productId===productId);if(!p)return;
+  if(p.deletedAt&&!existing[0]?.installment){toast('Barang sudah dihapus.');return;}
   if(existing[0]?.installment){installmentDetail(existing[0].id);return;}
   if(existing.length>1){toast('Ada beberapa catatan pembelian. Periksa melalui rincian kartu.');return;}
   const c=existing[0],card=cards.find(card=>card.id===(c?.cardId||p.payMethod)&&!card.legacyAllocation),amount=c?.amount??p.cost*p.purchasedQty;

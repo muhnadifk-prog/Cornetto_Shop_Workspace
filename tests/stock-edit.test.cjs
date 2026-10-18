@@ -42,7 +42,8 @@ assert.deepEqual(plain('creditEdit.sales'),plain('credit.sales'));
 run("credit.sales=[]");
 run("var archivedCredit=prepareStockDelete(credit,'p',stockBaseline(credit,'p'))");
 assert.equal(run('archivedCredit.inventory[0].qty'),0);assert.ok(run('archivedCredit.inventory[0].deletedAt'));
-assert.deepEqual(plain('archivedCredit.cardCharges'),plain('credit.cardCharges'));
+assert.equal(run('archivedCredit.cardCharges.length'),0);
+assert.deepEqual(plain('archivedCredit.inventory[0].cancelledInstallments[0].charges'),plain('credit.cardCharges'));
 run("var removable=structuredClone(initial);removable.sales=[];removable.inventory[0].qty=removable.inventory[0].purchasedQty;var removeBaseline=stockBaseline(removable,'p');var deleted=prepareStockDelete(removable,'p',removeBaseline)");
 assert.equal(run('deleted.inventory.length'),0);
 assert.equal(run('removable.inventory.length'),1);
@@ -61,4 +62,3 @@ assert.equal(run('nextStockSku()'),'CS-004');
 assert.ok(run("stockTable(initial.inventory).includes('data-action=\"edit-stock\"')"));
 assert.ok(run("stockTable(initial.inventory).includes('data-action=\"delete-stock\"')"));
 console.log('PASS: unlocked financed date/cost/quantity, historical HPP/funding preserved, linked deletion archives, no orphaned references, archived sales remain editable without restoring stock, stale-edit/delete protection and unique SKU after deletion.');
-

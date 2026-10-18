@@ -1,0 +1,63 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const clicks=[];
+const root=path.resolve(__dirname,'..'),context={console,Date,Intl,structuredClone,queueMicrotask(){},window:{addEventListener(){}},document:{addEventListener(event,handler){if(event==='click')clicks.push(handler);},getElementById(){return {addEventListener(){}};}},location:{hash:''}};
+vm.createContext(context);
+for(const name of ['card-schedule','card-groups','cornetto-modules','cornetto','money-input-v5','sale-edit','stock-edit','inventory-filters','inventory-view','installments','installments-ui','purchase-finance','installment-import','books-ui','workspace','entry-ui','performance','books-edit','books-export','expense-schedules','capital-finance','date-controls','card-repayments','card-activity'])vm.runInContext(fs.readFileSync(path.join(root,name+'.js'),'utf8'),context,{filename:name});
+const run=s=>vm.runInContext(s,context),plain=s=>JSON.parse(JSON.stringify(run(s)));
+run(`emptyWorkspace();TODAY='2026-10-18';
+cards=[{id:'cc',name:'Visa Demo',bank:'Bank Demo',limit:20000000,due:'',active:true,color:'#187457'}];
+inventory=[{id:'p',name:'Phone Demo',variant:'128GB',brand:'Demo',supplier:'Demo',sku:'DEMO-1',qty:1,purchasedQty:2,cost:1000000,price:1200000,date:'2026-08-01',payMethod:'cc'},
+{id:'other',name:'Other Phone',variant:'128GB',brand:'Demo',supplier:'Demo',sku:'DEMO-2',qty:1,purchasedQty:1,cost:1000000,price:1200000,date:'2026-08-01',payMethod:'cc'}];
+sales=[{id:'sale',productId:'p',qty:1,cost:1000000,price:1200000,fee:0,shipping:0,date:'2026-08-02',channel:'Demo',buyer:'Demo',status:'paid'}];
+cardCharges=[{id:'charge',cardId:'cc',productId:'p',date:'2026-08-01',amount:2000000,note:'Phone Demo',autoPost:true,
+installment:buildInstallment(2000000,{months:4,firstMonth:'2026-08',statementDay:21,dueAfterDays:16,admin:10000,adminMode:'first',interestMode:'none',interestValue:0})},
+{id:'ordinary',cardId:'cc',productId:'other',date:'2026-08-01',amount:1000000,note:'Other Phone'}];
+cardPayments=[{id:'auto',cardId:'cc',installmentChargeId:'charge',installmentNumber:1,date:'2026-09-06',amount:510000,source:'auto-installment',note:'Automatic'},
+{id:'manual',cardId:'cc',installmentChargeId:'charge',installmentNumber:2,date:'2026-10-06',amount:100000,note:'Manual'},
+{id:'other-pay',cardId:'cc',date:'2026-09-01',amount:50000,note:'Unrelated'}];
+ledger=cardPayments.map(p=>({id:'ledger-'+p.id,paymentId:p.id,...(p.installmentChargeId?{chargeId:p.installmentChargeId}:{}),date:p.date,type:'bayar',amount:p.amount,note:p.note}));
+business.expenseCorrections=[{chargeId:'charge',number:1,date:'2026-08-21',amount:5000,name:'Fee correction',category:'Bank'}];
+var seed=structuredClone(snapshot());validateSnapshot(seed);var baseline=stockBaseline(seed,'p');`);
+assert.throws(()=>run("prepareStockDelete(seed,'p',baseline)"),/Konfirmasi/);
+run("var next=prepareStockDelete(seed,'p',baseline,true);validateSnapshot(next)");
+assert.equal(run('seed.cardCharges.length'),2,'Preparation leaves original state intact');
+assert.deepEqual(plain('next.cardCharges.map(c=>c.id)'),['ordinary']);
+assert.deepEqual(plain('next.cardPayments.map(c=>c.id)'),['other-pay']);
+assert.deepEqual(plain('next.ledger.map(c=>c.id)'),['ledger-other-pay']);
+assert.equal(run('next.business.expenseCorrections.length'),0);
+assert.deepEqual(plain('next.sales'),plain('seed.sales'),'Historical sales and HPP are untouched');
+assert.equal(run('next.inventory[0].cancelledInstallments[0].payments.length'),2);
+assert.equal(run('next.inventory[0].cancelledInstallments[0].charges[0].autoPost'),true,'Backup retains original plan');
+run('applyState(next)');
+assert.equal(run('installmentCharges().length'),0);
+assert.equal(run("cardBalance('cc')"),950000);
+assert.equal(run('installmentExpenses().length'),0);
+assert.equal(run('installmentUpcoming().length'),0,'Removed plan cannot generate another due payment');
+assert.throws(()=>run("prepareStockDelete(next,'p',stockBaseline(next,'p'),true)"),/dihapus/);
+assert.throws(()=>run("commitPurchaseFinance('p',{},purchaseFinanceBaseline('p'))"),/dihapus/);
+run("var stale=structuredClone(seed);stale.cardPayments[0].amount=400000");
+assert.throws(()=>run("prepareStockDelete(stale,'p',baseline,true)"),/berubah/);
+run("var legacy=structuredClone(seed);legacy.inventory[0].deletedAt='2026-10-17T00:00:00Z';legacy.inventory[0].deletedStockQty=1;legacy.inventory[0].qty=0;applyState(legacy)");
+assert.equal(run("deletedInstallmentProduct(cardCharges[0])"),'p');
+run("var routedProduct='';var originalDeleteForm=deleteStockForm;deleteStockForm=id=>{routedProduct=id;}");
+for(const handler of clicks)handler({target:{closest:selector=>selector==='[data-install-action]'?{dataset:{installAction:'remove',id:'charge'}}:null}});
+assert.equal(run('routedProduct'),'p','Delete action must route to cascade confirmation, not locked schedule removal');
+run('deleteStockForm=originalDeleteForm');
+run("var cleaned=prepareStockDelete(legacy,'p',stockBaseline(legacy,'p'),true);validateSnapshot(cleaned)");
+assert.equal(run('cleaned.inventory[0].deletedStockQty'),1);
+assert.equal(run('cleaned.cardCharges.length'),1);
+run("var shared=structuredClone(seed);shared.cardCharges[0].productIds=['p','other'];var kept=prepareStockDelete(shared,'p',stockBaseline(shared,'p'))");
+assert.deepEqual(plain('kept.cardCharges'),plain('shared.cardCharges'),'Do not cancel financing for another live product');
+assert.deepEqual(plain('kept.cardPayments'),plain('shared.cardPayments'));
+run("var finalShared=prepareStockDelete(kept,'other',stockBaseline(kept,'other'),true);validateSnapshot(finalShared)");
+assert.equal(run('finalShared.cardCharges.filter(c=>c.installment).length'),0,'Last linked deletion removes shared installment');
+run(`var imported=structuredClone(seed);imported.cardPayments=imported.cardPayments.filter(p=>p.id==='other-pay');imported.ledger=imported.ledger.filter(r=>r.id==='ledger-other-pay');imported.business.expenseCorrections=[];
+imported.cardCharges[0].installment=buildInstallment(2000000,{months:4,firstMonth:'2026-08',statementDay:21,dueAfterDays:16,admin:0,adminMode:'first',interestMode:'none',interestValue:0,opening:{paidMonths:1,asOf:'2026-09-01'}});
+imported.cardCharges[0].importRowId='excel-1';imported.migration={warnings:[],installmentImport:{asOf:'2026-09-01',fingerprint:'a'.repeat(64),rows:[{id:'excel-1',row:1,description:'Phone Demo',cardLabel:'Demo',date:'2026-08-01',asOf:'2026-09-01',principal:2000000,months:4,paidMonths:1,rate:0,status:'active',kind:'stock',productId:'p',cardId:'cc',chargeId:'charge'}]}};
+validateSnapshot(imported);var removedImport=prepareStockDelete(imported,'p',stockBaseline(imported,'p'));validateSnapshot(removedImport);`);
+assert.equal(run('removedImport.migration.installmentImport.rows[0].dismissed'),true);
+assert.equal(run('removedImport.migration.installmentImport.rows[0].status'),'pending');
+assert.equal(run('removedImport.migration.installmentImport.rows[0].chargeId'),undefined);
+run('applyState(removedImport);validateSnapshot(JSON.parse(JSON.stringify(snapshot())))');
+if(process.env.STOCK_CASCADE_FIXTURE)fs.writeFileSync(process.env.STOCK_CASCADE_FIXTURE,JSON.stringify(plain('legacy'),null,2));
+console.log('PASS: installment cascade, paid/imported/previously-deleted stock, explicit payment consent, stale payment guard, shared financing, backups, sales preservation and unchanged unrelated debts.');

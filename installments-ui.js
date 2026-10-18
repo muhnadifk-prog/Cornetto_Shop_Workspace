@@ -82,9 +82,9 @@ function installmentView(){
 }
 function installmentDetail(id){
   const c=cardCharges.find(c=>c.id===id&&c.installment);if(!c)return;
-  const rows=c.installment.schedule,openingPaid=sum(rows.slice(0,c.installment.opening?.paidMonths||0),installmentRowTotal),posted=sum(cardPayments.filter(p=>p.installmentChargeId===id),p=>p.amount),locked=!!c.installment.opening||posted>0;
+  const rows=c.installment.schedule,openingPaid=sum(rows.slice(0,c.installment.opening?.paidMonths||0),installmentRowTotal),posted=sum(cardPayments.filter(p=>p.installmentChargeId===id),p=>p.amount),locked=!!c.installment.opening||posted>0,deletedProduct=deletedInstallmentProduct(c);
   openDrawer(c.note,`<p>${esc(cardName(c.cardId))}</p><div class="detail-lines">${installmentBookLine('Pokok pembelian',c.amount)}${installmentBookLine('Admin seluruh tenor',sum(rows,r=>r.admin))}${installmentBookLine('Bunga seluruh tenor',sum(rows,r=>r.interest))}${openingPaid?installmentBookLine('Lunas sebelum '+cardDate(c.installment.opening.asOf),openingPaid):''}${installmentBookLine('Pembayaran tercatat setelah saldo awal',posted)}${installmentBookLine('Sisa seluruh jadwal',sum(rows,r=>installmentRemaining(c,r)),true)}</div>${c.autoPost?'<div class="storage-notice"><strong>Pencatatan otomatis aktif</strong><p>Pembayaran jatuh tempo dicatat sebagai asumsi pemilik, bukan konfirmasi transaksi bank.</p></div>':''}
-    <div class="section-heading"><h3>Jadwal ${rows.length} bulan</h3><button class="icon-button" data-install-action="edit" data-id="${id}" ${locked?'disabled':''} title="Edit cicilan" aria-label="Edit cicilan">${icon('pencil')}</button><button class="icon-button" data-install-action="remove" data-id="${id}" ${locked?'disabled':''} title="Hapus jadwal cicilan" aria-label="Hapus jadwal cicilan">${icon('trash-2')}</button></div>
+    <div class="section-heading"><h3>Jadwal ${rows.length} bulan</h3><button class="icon-button" data-install-action="edit" data-id="${id}" ${locked?'disabled':''} title="Edit cicilan" aria-label="Edit cicilan">${icon('pencil')}</button><button class="icon-button" data-install-action="remove" data-id="${id}" ${locked&&!deletedProduct?'disabled':''} title="${deletedProduct?'Hapus cicilan barang terhapus':'Hapus jadwal cicilan'}" aria-label="${deletedProduct?'Hapus cicilan barang terhapus':'Hapus jadwal cicilan'}">${icon('trash-2')}</button></div>
     <div class="module-table installment-schedule"><table><thead><tr><th>Ke</th><th>Cetak</th><th>Jatuh tempo</th><th>Pokok</th><th>Bunga</th><th>Admin</th><th>Sisa</th><th></th></tr></thead><tbody>${rows.map(r=>{const remaining=installmentRemaining(c,r),historical=!r.statementDate;return `<tr><td>${r.number}</td><td>${historical?'Saldo awal':cardDate(r.statementDate)}</td><td>${historical?'Sudah dibayar':cardDate(r.dueDate)}</td><td>${installmentCurrency(r.principal)}</td><td>${installmentCurrency(r.interest)}</td><td>${installmentCurrency(r.admin)}</td><td>${remaining?installmentCurrency(remaining):'<span class="badge">Lunas</span>'}</td><td><button class="icon-button" data-install-action="pay" data-id="${id}" data-number="${r.number}" ${historical||remaining<=0||r.statementDate>TODAY?'disabled':''} title="Catat pembayaran angsuran ${r.number}" aria-label="Catat pembayaran angsuran ${r.number}">${icon('wallet')}</button></td></tr>`;}).join('')}</tbody></table></div>`,'CICILAN KARTU');
 }
 function installmentPaymentForm(chargeId,number,paymentId){
@@ -116,6 +116,10 @@ document.addEventListener('click',e=>{
   if(action==='pay')installmentPaymentForm(id,number);
   if(action==='ordinary-pay')paymentForm(id,null,true);
   if(action==='export')exportInstallments();
+  if(action==='remove'){
+    const c=cardCharges.find(c=>c.id===id&&c.installment),product=c&&deletedInstallmentProduct(c);
+    if(product){deleteStockForm(product);return;}
+  }
   if(action==='remove')openDrawer('Hapus jadwal cicilan?',`<p>Pokok pembelian dan stok tetap tercatat. Jadwal beserta biaya admin dan bunganya dibatalkan.</p><div class="form-footer"><button class="button" data-action="cancel">Batal</button><button class="button primary" data-install-action="confirm-remove" data-id="${id}">Hapus jadwal</button></div>`,'KONFIRMASI');
   if(action==='confirm-remove'){try{removeInstallment(id);finishModule('Jadwal dihapus; pokok pembelian tetap tercatat.');}catch(err){toast(err.message);}}
 });

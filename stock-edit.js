@@ -8,13 +8,30 @@ function stockLinks(state,id){
     imports:(state.migration?.installmentImport?.rows||[]).filter(references)
   };
 }
-function stockBaseline(state,id){return JSON.stringify({product:state.inventory.find(p=>p.id===id),links:stockLinks(state,id)});}
+function stockInstallmentDeletion(state,id){
+  const linked=stockLinks(state,id).charges.filter(c=>c.installment);
+  const productIds=c=>[...new Set([c.productId,...(c.productIds||[])].filter(Boolean))];
+  const shared=linked.filter(c=>productIds(c).some(pid=>pid!==id&&!state.inventory.find(p=>p.id===pid)?.deletedAt));
+  const charges=linked.filter(c=>!shared.includes(c)),ids=new Set(charges.map(c=>c.id));
+  const payments=state.cardPayments.filter(p=>ids.has(p.installmentChargeId)||ids.has(p.purchaseChargeId));
+  const paymentIds=new Set(payments.map(p=>p.id));
+  return {charges,shared,payments,
+    ledger:state.ledger.filter(r=>ids.has(r.chargeId)||paymentIds.has(r.paymentId)||payments.some(p=>r.id==='ledger-'+p.id)),
+    corrections:(state.business.expenseCorrections||[]).filter(r=>ids.has(r.chargeId)),
+    imports:(state.migration?.installmentImport?.rows||[]).filter(r=>ids.has(r.chargeId)||charges.some(c=>c.importRowId===r.id)),
+    products:state.inventory.filter(p=>linked.some(c=>productIds(c).includes(p.id)))
+  };
+}
+function stockBaseline(state,id){return JSON.stringify({product:state.inventory.find(p=>p.id===id),links:stockLinks(state,id),installments:stockInstallmentDeletion(state,id)});}
+function deletedInstallmentProduct(c){
+  return [c.productId,...(c.productIds||[])].filter(Boolean).find(id=>productById(id)?.deletedAt&&stockInstallmentDeletion(snapshot(),id).charges.some(row=>row.id===c.id));
+}
 function stockFundingLocked(product,links){
   return !!(links.charges.length||links.ledger.length||links.imports.length||(product.payMethod&&!['cash','unknown'].includes(product.payMethod)));
 }
 function stockDeleteReason(state,id){
   const p=state.inventory.find(p=>p.id===id);if(!p)return 'Barang tidak ditemukan.';
-  if(p.deletedAt)return 'Barang sudah dihapus dari inventori.';
+  if(p.deletedAt&&!stockInstallmentDeletion(state,id).charges.length)return 'Barang sudah dihapus dari inventori.';
   return '';
 }
 function prepareStockEdit(state,id,d,baseline){
@@ -42,13 +59,27 @@ function prepareStockEdit(state,id,d,baseline){
   });
   return next;
 }
-function prepareStockDelete(state,id,baseline){
+function prepareStockDelete(state,id,baseline,confirmPayments=false){
   if(stockBaseline(state,id)!==baseline)throw Error('Data barang atau transaksi terkait berubah. Buka ulang konfirmasi hapus.');
   const reason=stockDeleteReason(state,id);if(reason)throw Error(reason);
   const next=structuredClone(state),p=next.inventory.find(p=>p.id===id),links=stockLinks(next,id);
-  // Keep a zero-stock historical record when transactions still refer to this ID.
+  const removal=stockInstallmentDeletion(next,id);
+  if(removal.payments.length&&!confirmPayments)throw Error('Konfirmasi penghapusan catatan pembayaran cicilan terkait terlebih dahulu.');
+  if(removal.charges.length){
+    // Preserve a recoverable copy outside live balances and automatic posting.
+    p.cancelledInstallments??=[];
+    const {products,shared,...records}=removal;
+    p.cancelledInstallments.push({deletedAt:new Date().toISOString(),...structuredClone(records)});
+    const chargeIds=new Set(removal.charges.map(c=>c.id)),paymentIds=new Set(removal.payments.map(r=>r.id)),ledgerIds=new Set(removal.ledger.map(r=>r.id));
+    next.cardCharges=next.cardCharges.filter(c=>!chargeIds.has(c.id));
+    next.cardPayments=next.cardPayments.filter(r=>!paymentIds.has(r.id));
+    next.ledger=next.ledger.filter(r=>!ledgerIds.has(r.id));
+    next.business.expenseCorrections=(next.business.expenseCorrections||[]).filter(r=>!chargeIds.has(r.chargeId));
+    for(const row of removal.imports){row.status='pending';row.dismissed=true;row.reason='Dibatalkan bersama penghapusan barang inventori.';delete row.chargeId;delete row.activatedAt;delete row.kind;delete row.productId;}
+  }
+  // Sales retain their original cost and product reference after stock deletion.
   if(links.sales.length||stockFundingLocked(p,links)||p.qty!==p.purchasedQty){
-    p.deletedAt=new Date().toISOString();p.deletedStockQty=p.qty;p.qty=0;
+    if(!p.deletedAt){p.deletedAt=new Date().toISOString();p.deletedStockQty=p.qty;}p.qty=0;
   }else next.inventory=next.inventory.filter(p=>p.id!==id);
   return next;
 }
@@ -78,9 +109,13 @@ function deleteStockForm(id){
   const state=snapshot(),p=productById(id);if(!p)return;
   const reason=stockDeleteReason(state,id);
   const links=stockLinks(state,id),archive=links.sales.length||stockFundingLocked(p,links)||p.qty!==p.purchasedQty;
-  const message=archive?'Barang dihapus dari daftar inventori dan sisa stok menjadi nol. Arsip barang tetap disimpan untuk riwayat penjualan, pembiayaan, dan pembukuan. Utang, jadwal cicilan, serta pembayaran tidak dihapus atau dianggap lunas.':'Barang beserta lampiran invoice-nya akan dihapus dari inventori. Tindakan ini tidak dapat dibatalkan.';
-  openDrawer(reason?'Barang tidak dapat dihapus':'Hapus barang?',`<form id="stockDeleteForm" data-id="${esc(id)}"><div class="stock-delete-summary"><strong>${esc(p.name)}</strong><p>${esc(p.variant)}${p.imei?' / IMEI '+esc(p.imei):''}</p></div>
-    ${reason?`<p class="stock-edit-note" role="status">${esc(reason)}</p><div class="form-footer"><button type="button" class="button" data-action="cancel">Tutup</button></div>`:`<div class="detail-lines">${bookLine('Nilai stok yang dihapus',p.cost*Math.max(0,p.qty))}<div class="book-line"><span>Sisa stok</span><strong>${p.qty} unit</strong></div></div><p class="stock-edit-note">${message} Perubahan disinkronkan ke cloud jika aktif.</p><p id="formError" class="form-error" role="alert"></p><div class="form-footer"><button type="button" class="button" data-action="cancel">Batal</button><button type="submit" class="button danger">${icon('trash-2')}Hapus barang</button></div>`}</form>`,'INVENTORI');
+  const removal=stockInstallmentDeletion(state,id),cleanup=!!p.deletedAt;
+  const message=removal.charges.length?'Barang dan cicilan terkait dihapus dari catatan aktif, termasuk pokok utang, jadwal, bunga/admin, dan pembayaran yang khusus terhubung. Pencatatan otomatis berhenti. Riwayat penjualan tetap; salinan catatan yang dibatalkan disimpan dalam backup barang. Ini tidak membatalkan transaksi di bank.':archive?'Barang dihapus dari daftar inventori dan sisa stok menjadi nol. Riwayat penjualan serta tagihan biasa tetap tersimpan.':'Barang beserta lampiran invoice-nya akan dihapus dari inventori. Tindakan ini tidak dapat dibatalkan.';
+  const financeSummary=removal.charges.length?`${bookLine('Pokok cicilan yang dibatalkan',sum(removal.charges,c=>c.amount))}${bookLine('Catatan pembayaran yang ikut dihapus',sum(removal.payments,r=>r.amount))}`:'';
+  const paymentConfirmation=removal.payments.length?`<label class="purchase-finance-option"><input type="checkbox" name="confirmPayments" required><span>Saya setuju menghapus ${removal.payments.length} catatan pembayaran cicilan terkait beserta mutasi pembukuannya.</span></label>`:'';
+  const sharedNotice=removal.shared.length?'<p class="stock-edit-note">Ada cicilan gabungan dengan barang lain yang belum dihapus. Cicilan gabungan tersebut tetap tersimpan agar tagihan barang lain tidak ikut hilang.</p>':'';
+  openDrawer(reason?'Barang tidak dapat dihapus':cleanup?'Hapus cicilan barang terhapus?':'Hapus barang?',`<form id="stockDeleteForm" data-id="${esc(id)}"><div class="stock-delete-summary"><strong>${esc(p.name)}</strong><p>${esc(p.variant)}${p.imei?' / IMEI '+esc(p.imei):''}</p></div>
+    ${reason?`<p class="stock-edit-note" role="status">${esc(reason)}</p><div class="form-footer"><button type="button" class="button" data-action="cancel">Tutup</button></div>`:`<div class="detail-lines">${bookLine('Nilai stok yang dihapus',p.cost*Math.max(0,p.qty))}<div class="book-line"><span>Sisa stok</span><strong>${p.qty} unit</strong></div>${financeSummary}</div><p class="stock-edit-note">${message} Perubahan disinkronkan ke cloud jika aktif.</p>${sharedNotice}${paymentConfirmation}<p id="formError" class="form-error" role="alert"></p><div class="form-footer"><button type="button" class="button" data-action="cancel">Batal</button><button type="submit" class="button danger">${icon('trash-2')}${cleanup?'Hapus cicilan':removal.charges.length?'Hapus barang & cicilan':'Hapus barang'}</button></div>`}</form>`,'INVENTORI');
   el('stockDeleteForm').dataset.baseline=stockBaseline(state,id);
 }
 document.addEventListener('submit',async e=>{
@@ -91,10 +126,9 @@ document.addEventListener('submit',async e=>{
   let saving=false;
   try{
     await saveQueue;if(storageFailed)throw Error('Penyimpanan belum siap. Backup data sebelum mencoba lagi.');
-    const state=snapshot(),next=f.id==='stockEditForm'?prepareStockEdit(state,f.dataset.id,Object.fromEntries(new FormData(f)),f.dataset.baseline):prepareStockDelete(state,f.dataset.id,f.dataset.baseline);
+    const state=snapshot(),next=f.id==='stockEditForm'?prepareStockEdit(state,f.dataset.id,Object.fromEntries(new FormData(f)),f.dataset.baseline):prepareStockDelete(state,f.dataset.id,f.dataset.baseline,f.elements.confirmPayments?.checked===true);
     validateSnapshot(next);savePending++;saving=true;updateStorageBadge();
-    await persist(next);applyState(next);closeDrawer();render();toast(f.id==='stockEditForm'?'Inventori diperbarui.':'Barang dihapus.');
+    await persist(next);applyState(next);closeDrawer();render();toast(f.id==='stockEditForm'?'Inventori diperbarui.':stockInstallmentDeletion(state,f.dataset.id).charges.length?'Barang dan cicilan terkait sudah dihapus.':'Barang dihapus.');
   }catch(err){formError(err.message);}
   finally{if(saving)savePending--;updateStorageBadge();delete f.dataset.saving;if(button.isConnected)button.disabled=false;}
 });
-
