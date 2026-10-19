@@ -1,0 +1,55 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const root=path.resolve(__dirname,'..'),context={console,Date,Intl,structuredClone,queueMicrotask(){},window:{addEventListener(){}},document:{addEventListener(){},getElementById(){return {addEventListener(){}};}},location:{hash:''}};
+vm.createContext(context);
+for(const name of ['card-schedule','card-groups','cornetto-modules','cornetto','money-input-v5','sale-edit','stock-edit','inventory-filters','inventory-view','installments','installments-ui','purchase-finance','installment-import','books-ui','workspace','entry-ui','performance','books-edit','books-export','expense-schedules','capital-finance','date-controls','card-repayments','card-activity'])vm.runInContext(fs.readFileSync(path.join(root,name+'.js'),'utf8'),context,{filename:name});
+const run=s=>vm.runInContext(s,context),plain=s=>JSON.parse(JSON.stringify(run(s)));
+run(`emptyWorkspace();TODAY='2026-10-18';var lastError='';formError=message=>{lastError=message;return false;};
+suppliers=[{id:'sup',name:'Supplier Demo',active:true}];
+cards=[{id:'cc',name:'D-Card',bank:'Jenius',limit:10000000,due:'',active:true,color:'#187457'},
+{id:'bri',name:'BRI Paper Card',bank:'BRI',limit:10000000,due:'',active:true,color:'#187457'},
+{id:'bca',name:'BCA / Blibli',bank:'BCA',limit:10000000,due:'',active:true,color:'#187457'}];
+var seed=structuredClone(snapshot());
+var data={name:'Phone Demo',variant:'128GB',brand:'Xiaomi',category:'Handphone',condition:'Baru',warranty:'Resmi',supplierId:'sup',qty:'3',cost:'1599000',price:'',date:'2026-10-18',payMethod:'cc',creditMode:'full',imei:'001234567890123',imei2:'001234567890124',imei3:'001234567890125'};
+`);
+assert.equal(run("cardName('cc')"),'Jenius / D-Card');
+assert.equal(run("cardName('bri')"),'BRI / Paper Card');
+assert.equal(run("cardName('bca')"),'BCA / Blibli');
+assert.match(run('cardFilterOptions()'),/Jenius \/ D-Card/);
+assert.equal(run('commitStock(data)'),true);
+run('validateSnapshot(snapshot())');
+assert.equal(run('inventory.length'),3);
+assert.equal(run('cardCharges.length'),3);
+assert.equal(run('sum(inventory,p=>p.qty)'),3);
+assert.equal(run('sum(cardCharges,c=>c.amount)'),4797000);
+assert.ok(run('inventory.every(p=>p.qty===1&&p.purchasedQty===1&&p.price===0)'));
+assert.deepEqual(plain('inventory.map(p=>p.imei).sort()'),['001234567890123','001234567890124','001234567890125']);
+assert.equal(run('new Set(inventory.map(p=>p.sku)).size'),3);
+assert.equal(run('commitStock(data)'),false);assert.match(run('lastError'),/sudah ada/);
+run('applyState(structuredClone(seed))');
+assert.equal(run('commitStock({...data,imei2:data.imei})'),false);assert.match(run('lastError'),/antarunit/);
+assert.equal(run('inventory.length'),0);assert.equal(run('cardCharges.length'),0);
+assert.equal(run("commitStock({...data,imei3:'invalid'})"),false);
+assert.equal(run('inventory.length'),0);
+assert.equal(run("commitStock({...data,qty:'1000'})"),false);
+assert.equal(run("commitStock({...data,imei2:'',imei3:'',payMethod:'cash'})"),true);
+assert.equal(run('inventory.length'),3);assert.equal(run('cardCharges.length'),0);
+run('applyState(structuredClone(seed))');
+assert.equal(run("commitStock({...data,imei:'',imei2:'',imei3:''})"),true);
+assert.equal(run('inventory.length'),1);assert.equal(run('inventory[0].qty'),3,'Blank IMEIs retain batch entry');
+run('applyState(structuredClone(seed))');
+assert.equal(run("commitStock({...data,category:'Elektronik'})"),true);
+assert.equal(run('inventory.length'),1);assert.equal(run('inventory[0].imei'),'');
+for(const interestMode of ['none','flat','monthly','total','schedule']){
+  run(`applyState(structuredClone(seed));var planData={...data,creditMode:'installment',months:3,firstMonth:'2026-10',statementDay:21,dueAfterDays:16,admin:35000.01,adminMode:'monthly',interestMode:'${interestMode}',interestValue:${interestMode==='flat'?0.89:interestMode==='monthly'?1700000:15000.01},autoPost:true,customRows:[{principal:1000000.01,interest:21.01,admin:100.01},{principal:2000000.02,interest:17.02,admin:0},{principal:1796999.97,interest:0,admin:0}]};var bankPlan=buildInstallment(4797000,planData);`);
+  assert.equal(run('commitStock(planData)'),true,interestMode);
+  run('validateSnapshot(snapshot())');
+  for(let i=0;i<3;i++)for(const key of ['principal','interest','admin'])assert.equal(run(`sum(cardCharges,c=>cents(c.installment.schedule[${i}].${key}))`),run(`cents(bankPlan.schedule[${i}].${key})`),`${interestMode}: month ${i} ${key}`);
+  assert.ok(run('cardCharges.every(c=>cents(sum(c.installment.schedule,r=>r.principal))===cents(1599000))'));
+  assert.equal(run('installmentCharges().length'),3);
+  run("var removed=prepareStockDelete(snapshot(),inventory[0].id,stockBaseline(snapshot(),inventory[0].id));validateSnapshot(removed)");
+  assert.equal(run('removed.cardCharges.length'),2,'Deleting one unit cancels only that unit financing');
+}
+run(`applyState(structuredClone(seed));commitStock(data);var p=inventory[0];sales=[{id:'sale',productId:p.id,qty:1,date:TODAY,cost:p.cost,price:1800000,fee:0,shipping:0,channel:'Demo',buyer:'Demo',status:'paid'}];p.qty=0;var paid=snapshot();reconcileSaleCardPayments(paid);validateSnapshot(paid);`);
+assert.equal(run('paid.cardPayments.length'),1);assert.equal(run('paid.cardPayments[0].amount'),1599000);
+if(process.env.MULTI_IMEI_FIXTURE)fs.writeFileSync(process.env.MULTI_IMEI_FIXTURE,JSON.stringify(plain('seed'),null,2));
+console.log('PASS: multi-unit IMEI, duplicates/leading zeros, partial and blank IMEIs, atomic validation, cash/cards, per-unit financing, exact bank schedule totals, per-unit deletion, sale repayment, bank/card labels.');
