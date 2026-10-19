@@ -123,6 +123,7 @@ function validateSnapshot(d){
   validateInstallments(d);
   if(typeof validateSaleRepayments==='function')validateSaleRepayments(d);
   if(typeof validateExpenseSchedules==='function')validateExpenseSchedules(d);
+  if(typeof validateMarketplaceCalculator==='function')validateMarketplaceCalculator(d);
   return d;
 }
 async function previewBackup(file){
