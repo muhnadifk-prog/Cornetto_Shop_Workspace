@@ -13,7 +13,7 @@ function editSaleForm(id){
     <div class="field-pair">${field('Biaya admin total (Rp)','fee','number',s.fee,'required min="0" step="1"')}${field('Ongkir ditanggung (Rp)','shipping','number',s.shipping||0,'required min="0" step="1"')}</div>
     ${field('Nama pembeli','buyer','text',s.buyer||'','maxlength="80"')}
     <div class="estimate"><span>HPP per unit</span><strong id="editSaleCost">${money(s.cost)}</strong></div>
-    <div class="estimate"><span>Laba transaksi</span><strong id="editSaleProfit">${money(profit(s))}</strong></div>
+    <div class="estimate"><span>Laba transaksi</span><strong id="editSaleProfit">${saleProfitText(profit(s),revenue(s))}</strong></div>
     <label class="purchase-finance-option"><input type="checkbox" name="financePurchase"><span>Atur cicilan kartu untuk pembelian barang ini setelah simpan</span></label>${formFooter('Simpan perubahan')}</form>`,'PENJUALAN / '+id);
 }
 function commitSaleEdit(id,d,baseline){
@@ -37,7 +37,8 @@ function updateSaleEditEstimate(f){
   const s=sales.find(s=>s.id===f.dataset.id),p=productById(f.elements.productId.value);if(!s||!p)return;
   const cost=p.id===s.productId?s.cost:p.cost;
   el('editSaleCost').textContent=money(cost);
-  el('editSaleProfit').textContent=money((Number(f.elements.price.value)-cost)*Number(f.elements.qty.value)-Number(f.elements.fee.value)-Number(f.elements.shipping.value));
+  const total=Number(f.elements.price.value)*Number(f.elements.qty.value);
+  el('editSaleProfit').textContent=saleProfitText(total-cost*Number(f.elements.qty.value)-Number(f.elements.fee.value)-Number(f.elements.shipping.value),total);
 }
 for(const event of ['input','change'])document.addEventListener(event,e=>{if(e.target.form?.id==='saleEditForm')updateSaleEditEstimate(e.target.form);});
 document.addEventListener('submit',e=>{
