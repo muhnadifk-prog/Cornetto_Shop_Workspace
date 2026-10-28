@@ -1,4 +1,62 @@
 'use strict';
+function saleDeleteLinks(state,id){
+  const payments=state.cardPayments.filter(p=>p.saleId===id&&isSaleRepayment(p)),paymentIds=new Set(payments.map(p=>p.id));
+  return {
+    payments,
+    ledger:state.ledger.filter(r=>(r.source==='auto-sale'&&r.saleId===id)||paymentIds.has(r.paymentId)||payments.some(p=>r.id==='ledger-'+p.id)),
+    manualPayments:state.cardPayments.filter(p=>!isSaleRepayment(p)&&p.saleAllocations?.some(a=>a.saleId===id)),
+    corrections:(state.business.salePaymentCorrections||[]).filter(r=>r.saleId===id),
+    skipped:(state.business.salePaymentSkips||[]).includes(id)
+  };
+}
+function saleDeleteBaseline(state,id){
+  const sale=state.sales.find(s=>s.id===id);
+  return JSON.stringify({sale,product:state.inventory.find(p=>p.id===sale?.productId),links:saleDeleteLinks(state,id)});
+}
+function prepareSaleDelete(state,id,baseline){
+  const sale=state.sales.find(s=>s.id===id);
+  if(!sale||saleDeleteBaseline(state,id)!==baseline)throw Error('Penjualan atau stok terkait berubah. Buka ulang konfirmasi hapus.');
+  const next=structuredClone(state),p=next.inventory.find(p=>p.id===sale.productId);
+  if(!p||!Number.isSafeInteger(sale.qty)||sale.qty<1||!Number.isSafeInteger(p.qty)||!Number.isSafeInteger(p.qty+sale.qty))throw Error('Produk atau jumlah stok tidak valid. Penjualan belum dihapus.');
+  const links=saleDeleteLinks(next,id);
+  // Keep the original record and its automatic postings recoverable in the stock backup.
+  p.cancelledSales??=[];
+  p.cancelledSales.push({deletedAt:new Date().toISOString(),sale:structuredClone(sale),...structuredClone(links)});
+  p.qty+=sale.qty;
+  // A previously deleted batch returns only the units from this cancelled sale.
+  delete p.deletedAt;delete p.deletedStockQty;
+  next.sales=next.sales.filter(s=>s.id!==id);
+  const paymentIds=new Set(links.payments.map(r=>r.id)),ledgerIds=new Set(links.ledger.map(r=>r.id));
+  next.cardPayments=next.cardPayments.filter(r=>!paymentIds.has(r.id));
+  next.ledger=next.ledger.filter(r=>!ledgerIds.has(r.id));
+  for(const payment of links.manualPayments)payment.saleAllocations=payment.saleAllocations.filter(a=>a.saleId!==id);
+  if(next.business.salePaymentCorrections)next.business.salePaymentCorrections=next.business.salePaymentCorrections.filter(r=>r.saleId!==id);
+  if(next.business.salePaymentSkips)next.business.salePaymentSkips=next.business.salePaymentSkips.filter(saleId=>saleId!==id);
+  reconcileSaleCardPayments(next);validateSnapshot(next);return next;
+}
+function saleDetailActions(s){return `<div class="sale-detail-actions"><button class="button" data-action="edit-sale" data-id="${esc(s.id)}">${icon('pencil')}Edit penjualan</button><button class="button sale-delete" data-action="delete-sale" data-id="${esc(s.id)}">${icon('trash-2')}Hapus penjualan</button></div>`;}
+function deleteSaleForm(id){
+  const state=snapshot(),s=state.sales.find(s=>s.id===id),p=state.inventory.find(p=>p.id===s?.productId);if(!s||!p)return;
+  const links=saleDeleteLinks(state,id);
+  openDrawer('Hapus penjualan?',`<form id="saleDeleteForm" data-id="${esc(id)}">
+    <div class="stock-delete-summary"><strong>${esc(p.name)}</strong><p>${esc(p.variant)}${p.imei?' / IMEI '+esc(p.imei):''}</p><p>${esc(id)} / ${date(s.date)} ${s.date.slice(0,4)}</p></div>
+    <div class="detail-lines">${bookLine('Total penjualan',revenue(s))}<div class="book-line"><span>Stok dikembalikan</span><strong>${s.qty} unit</strong></div><div class="book-line"><span>Sisa stok setelah hapus</span><strong>${p.qty+s.qty} unit</strong></div>${links.payments.length?bookLine('Pembayaran kartu otomatis dibatalkan',sum(links.payments,r=>r.amount)):''}</div>
+    <p class="stock-edit-note">Penjualan dihapus dari laporan, termasuk omzet, laba, dan pencairannya. ${s.qty} unit kembali ke inventori asal. Tagihan pembelian dan cicilan barang tetap tersimpan.${p.deletedAt?' Batch yang sebelumnya dihapus akan muncul lagi, hanya dengan unit yang dikembalikan ini.':''}</p>
+    ${links.payments.length||links.manualPayments.length?'<p class="stock-edit-note">Catatan pembayaran kartu otomatis dari penjualan ini ikut dibatalkan. Pembayaran manual tetap ada; hanya tautannya ke penjualan ini yang dilepas. Ini tidak membatalkan pembayaran di bank.</p>':''}
+    <p id="formError" class="form-error" role="alert"></p><div class="form-footer"><button type="button" class="button" data-action="cancel">Batal</button><button type="submit" class="button danger">${icon('trash-2')}Hapus & kembalikan stok</button></div></form>`,'PENJUALAN');
+  el('saleDeleteForm').dataset.baseline=saleDeleteBaseline(state,id);
+}
+document.addEventListener('submit',async e=>{
+  const f=e.target;if(f.id!=='saleDeleteForm')return;e.preventDefault();if(f.dataset.saving)return;
+  const button=f.querySelector('[type="submit"]');if(!button)return;
+  f.dataset.saving='true';button.disabled=true;let saving=false;
+  try{
+    await saveQueue;if(storageFailed)throw Error('Penyimpanan belum siap. Backup data sebelum mencoba lagi.');
+    const next=prepareSaleDelete(snapshot(),f.dataset.id,f.dataset.baseline);
+    savePending++;saving=true;updateStorageBadge();await persist(next);applyState(next);closeDrawer();render();toast('Penjualan dihapus. Stok sudah dikembalikan.');
+  }catch(err){formError(err.message);}
+  finally{if(saving)savePending--;updateStorageBadge();delete f.dataset.saving;if(button.isConnected)button.disabled=false;}
+});
 let saleEditBaseline='';
 function editSaleForm(id){
   const s=sales.find(s=>s.id===id);if(!s)return;
