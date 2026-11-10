@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const root=path.resolve(__dirname,'..'),context={console,Date,Intl,structuredClone,queueMicrotask(){},window:{addEventListener(){}},document:{addEventListener(){},getElementById(){return {addEventListener(){}};}},location:{hash:''}};
 vm.createContext(context);
-for(const name of ['card-schedule','card-groups','cornetto-modules','cornetto','money-input-v5','sale-edit','stock-edit','inventory-filters','inventory-view','installments','installments-ui','purchase-finance','installment-import','books-ui','workspace','entry-ui','performance','books-edit','books-export','expense-schedules','capital-finance','date-controls','card-repayments','card-activity'])vm.runInContext(fs.readFileSync(path.join(root,name+'.js'),'utf8'),context,{filename:name});
+for(const name of ['card-schedule','card-groups','cornetto-modules','cornetto','money-input-v5','sale-edit','stock-edit','inventory-filters','inventory-view','installments','installments-ui','purchase-finance','installment-import','books-ui','workspace','entry-ui','performance','books-edit','books-export','expense-schedules','capital-finance','date-controls','card-repayments','card-activity','installment-export'])vm.runInContext(fs.readFileSync(path.join(root,name+'.js'),'utf8'),context,{filename:name});
 const run=s=>vm.runInContext(s,context),plain=s=>JSON.parse(JSON.stringify(run(s)));
 run("emptyWorkspace();TODAY='2026-10-17';cards=[{id:'cc',name:'Visa',bank:'Test Bank',limit:10000000,due:'',active:true,color:'#187457'}];inventory=[{id:'p1',name:'Test Phone',variant:'128GB',sku:'CS-1',brand:'Test',supplier:'Test',purchasedQty:2,qty:0,cost:1000000,price:1100000,payMethod:'cc',date:'2026-10-01'}];cardCharges=[{id:'c1',productId:'p1',cardId:'cc',amount:2000000,date:'2026-10-01',note:'Test Phone'}];");
 run("sales=[{id:'s1',productId:'p1',date:'2026-10-02',qty:1,cost:1000000,price:1100000,fee:10000,shipping:0,status:'paid',channel:'Toko',buyer:''},{id:'s2',productId:'p1',date:'2026-10-03',qty:1,cost:1000000,price:1100000,fee:10000,shipping:0,status:'pending',channel:'Toko',buyer:''}];var seed=structuredClone(snapshot());var state=structuredClone(seed);");
@@ -115,7 +115,7 @@ assert.doesNotMatch(run('cardFilterOptions(installmentBank)'),/Deleted card|Othe
 run("selectedCard='second';html=installmentView()");assert.equal(run('filteredInstallmentPlans().length'),1);
 run("selectedCard='all';installmentBank='other bank';html=installmentView()");
 assert.equal(run('filteredInstallmentPlans()[0].cardId'),'unused');assert.match(run('html'),/1-1 dari 1 pembelian/);
-run("var csv='';downloadData=(file,data)=>{csv=data;};exportInstallments()");assert.match(run('csv'),/Other Bank/);assert.doesNotMatch(run('csv'),/Test Bank/);
+assert.deepEqual(plain('installmentExportReport().plans.map(p=>p.card)'),['Unused']);
 assert.equal(run('JSON.stringify([cards,cardCharges,cardPayments])'),run('beforeFilters'),'Filters and export do not change stored data');
 run("installmentBank='removed bank';installmentView()");assert.equal(run('installmentBank'),'');
 run("cards[0].due=cardCharges[0].installment.schedule[0].dueDate;cardCharges.push({id:'ordinary',cardId:'cc',amount:9000000});cardPayments=[];var dueBanner=nearestCardDueLabel(cards.filter(c=>c.active))");
@@ -130,9 +130,9 @@ for(const [tenor,expected] of [['short',[3,11]],['year',[12]],['long',[24,13]]])
   assert.deepEqual(plain('filteredInstallmentPlans().map(c=>c.installment.months)'),expected);
   assert.match(run('html'),new RegExp('value="'+tenor+'" selected'));
 }
-run("installmentBank='test bank';html=installmentView();exportInstallments()");
+run("installmentBank='test bank';html=installmentView()");
 assert.match(run('html'),/1-1 dari 1 pembelian/);assert.match(run('html'),/Tenor 24 bulan/);
-assert.match(run('csv'),/Plan 24/);assert.doesNotMatch(run('csv'),/Plan (13|12|11|3)"/);
+assert.deepEqual(plain('installmentExportReport().plans.map(p=>p.months)'),[24]);
 run("installmentTenor='all';installmentBank='';");assert.equal(run('filteredInstallmentPlans().length'),5);
 assert.doesNotMatch(entry,/data-calculator|id="calculator"/);assert.match(entry,/data-nav="marketplace"/);
 assert.equal(run("typeof calculatorKey"),'undefined');assert.equal(run("parseMoneyInput('1.234.567')"),'1234567');

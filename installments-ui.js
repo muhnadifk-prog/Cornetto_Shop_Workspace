@@ -103,11 +103,6 @@ function routeInstallmentPayment(cardId,paymentId,ordinary){
   openDrawer('Pilih tagihan',`${regular.map(c=>`<div class="expense-row"><div><strong>${esc(cardName(c.id))}</strong><p>Tagihan biasa / ${installmentCurrency(ordinaryCardBalance(c.id))}</p></div><button class="icon-button" data-install-action="ordinary-pay" data-id="${c.id}" title="Bayar tagihan biasa" aria-label="Bayar tagihan biasa ${esc(cardName(c.id))}">${icon('wallet')}</button></div>`).join('')}${rows.map(({charge,row})=>`<div class="expense-row"><div><strong>${esc(charge.note)}</strong><p>${esc(cardName(charge.cardId))} / ${row.number} dari ${charge.installment.months} / ${cardDate(row.dueDate)} / ${installmentCurrency(installmentRemaining(charge,row))}</p></div><button class="icon-button" data-install-action="pay" data-id="${charge.id}" data-number="${row.number}" title="Bayar cicilan" aria-label="Bayar cicilan ${row.number} ${esc(charge.note)}">${icon('wallet')}</button></div>`).join('')}${!rows.length&&!regular.length?emptyState('Belum ada tagihan yang sudah tercetak.'):''}`,'PEMBAYARAN KARTU');
   return true;
 }
-function exportInstallments(){
-  const rows=[['Kartu','Pembelian','Angsuran','Cetak','Jatuh tempo','Pokok','Bunga','Admin','Total','Dibayar','Sisa']];
-  for(const c of filteredInstallmentPlans())for(const r of c.installment.schedule)rows.push([cardName(c.cardId),c.note,r.number,r.statementDate,r.dueDate,r.principal,r.interest,r.admin,installmentRowTotal(r),installmentPaid(c.id,r.number),installmentRemaining(c,r)]);
-  downloadData('cicilan-kartu_'+TODAY+'.csv','\ufeff'+rows.map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n'),'text/csv;charset=utf-8');
-}
 document.addEventListener('click',e=>{
   const a=e.target.closest('[data-install-action]');if(!a)return;
   const {installAction:action,id,number}=a.dataset;
@@ -116,7 +111,7 @@ document.addEventListener('click',e=>{
   if(action==='detail')installmentDetail(id);
   if(action==='pay')installmentPaymentForm(id,number);
   if(action==='ordinary-pay')paymentForm(id,null,true);
-  if(action==='export')exportInstallments();
+  if(action==='export')exportInstallments(a);
   if(action==='remove'){
     const c=cardCharges.find(c=>c.id===id&&c.installment),product=c&&deletedInstallmentProduct(c);
     if(product){deleteStockForm(product);return;}

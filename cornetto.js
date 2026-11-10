@@ -37,7 +37,9 @@ function heading(){
   let controls=['dashboard','sales','books'].includes(view)?`<label class="period">${icon('calendar-days')}<select id="period" aria-label="Periode laporan">${periodOptions.map(([key,label])=>`<option value="${key}" ${period===key?'selected':''}>${label}</option>`).join('')}</select></label>`:'';
   if(view==='tax')controls=`<label class="period">${icon('calendar-days')}<select id="taxYear" aria-label="Tahun pajak">${reportYears().map(y=>`<option ${taxYear===y?'selected':''}>${y}</option>`).join('')}</select></label>`;
   if(view==='marketplace')subtitles.marketplace='';
-  if(!['settings','data','marketplace'].includes(view))controls+=`<button class="button export-button" data-action="export" title="${view==='books'?'Unduh pembukuan Excel lengkap':'Unduh laporan CSV'}" aria-label="${view==='books'?'Unduh pembukuan Excel lengkap':'Unduh laporan CSV'}">${icon('download')}<span class="export-label">Ekspor</span></button><button class="button primary" data-action="${action[0]}">${icon('plus')}${action[1]}</button>`;
+  const forInstallments=view==='cards'&&cardTab==='installments';
+  const exportTitle=forInstallments?'Unduh cicilan pembelian Excel':view==='books'?'Unduh pembukuan Excel lengkap':'Unduh laporan CSV';
+  if(!['settings','data','marketplace'].includes(view))controls+=`<button class="button export-button" ${forInstallments?'data-install-action="export"':'data-action="export"'} title="${exportTitle}" aria-label="${exportTitle}">${icon('download')}<span class="export-label">Ekspor</span></button><button class="button primary" data-action="${action[0]}">${icon('plus')}${action[1]}</button>`;
   return `<div class="page-heading"><div><span class="eyebrow">${esc(business.name.toUpperCase())}</span><h1>${view==='dashboard'?'Ringkasan bisnis':labels[view]}</h1><p class="subtitle">${subtitles[view]}</p></div><div class="heading-actions">${controls}</div></div>`;
 }
 function kpi(label,value,foot,ico){return `<div class="kpi"><div class="kpi-label">${label}<span class="metric-icon">${icon(ico)}</span></div><div class="kpi-value"><small>Rp</small>${compact(value)}</div><div class="kpi-foot">${foot}</div></div>`;}
