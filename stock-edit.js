@@ -38,6 +38,7 @@ function prepareStockEdit(state,id,d,baseline){
   const p=state.inventory.find(p=>p.id===id);
   if(!p||stockBaseline(state,id)!==baseline)throw Error('Data barang atau transaksi terkait berubah. Buka ulang edit inventori.');
   if(p.deletedAt)throw Error('Barang sudah dihapus dari inventori.');
+  if(state.business.brands&&stockBrandKey(d.brand)!==stockBrandKey(p.brand)&&!stockBrandList(state.business,state.inventory).some(name=>stockBrandKey(name)===stockBrandKey(d.brand)))throw Error('Merek sudah berubah. Buka ulang edit barang.');
   const links=stockLinks(state,id);
   const qty=Number(d.qty),cost=Number(d.cost),price=Number(d.price),dateValue=d.date;
   const textLimits={name:200,variant:200,brand:80,category:100,condition:100,warranty:100,imei:100,notes:4000};

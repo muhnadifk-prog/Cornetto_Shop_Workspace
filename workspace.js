@@ -95,6 +95,8 @@ function validateSnapshot(d){
   for(const g of groups){if(!/^[a-zA-Z0-9_-]+$/.test(g.id)||groupIds.has(g.id)||typeof g.name!=='string'||!g.name.trim()||!validAmount(g.limit)||g.limit<=0)throw Error('Grup limit tidak valid.');groupIds.add(g.id);}
   for(const c of d.cards)if((c.groupId&&!groupIds.has(c.groupId))||(c.legacyAllocation&&(!c.groupId||c.active)))throw Error('Keanggotaan grup kartu tidak valid.');
   for(const key of ['name','owner'])if(typeof d.business[key]!=='string')throw Error('Identitas toko tidak lengkap.');
+  const brands=d.business.brands;
+  if(brands!==undefined&&(!Array.isArray(brands)||brands.some(b=>typeof b!=='string'||!stockBrandKey(b)||['all','lainnya'].includes(stockBrandKey(b)))||new Set(brands.map(stockBrandKey)).size!==brands.length))throw Error('Daftar merek tidak valid.');
   for(const key of ['categories','conditions','warranties'])if(!Array.isArray(d.business[key])||!d.business[key].every(x=>typeof x==='string'))throw Error('Pilihan produk tidak valid.');
   if(!validAmount(d.taxProfile.rate)||d.taxProfile.rate>100)throw Error('Tarif tidak valid.');
   if(d.migration&&(!Array.isArray(d.migration.warnings)||!d.migration.warnings.every(w=>typeof w==='string')))throw Error('Laporan impor tidak valid.');

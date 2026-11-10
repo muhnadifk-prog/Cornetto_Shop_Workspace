@@ -42,7 +42,9 @@ function inventoryResults(rows){
   return (stockPresentation==='groups'?groupedStockTable(selected):stockTable(selected))+pager(display.length).replace(/ produk</,' '+(stockPresentation==='groups'?'produk':'catatan masuk')+'<');
 }
 function inventoryView(){
-  const rows=filteredInventory(),dated=stockDateRows(),brands=[...new Set(inventory.map(p=>p.brand))].sort((a,b)=>a.localeCompare(b,'id'));
+  const brands=stockBrandList();
+  if(channel!=='all')channel=brands.find(b=>stockBrandKey(b)===stockBrandKey(channel))||'all';
+  const rows=filteredInventory(),dated=stockDateRows();
   const statuses=[['all','Semua produk',dated.length],['low','Stok menipis',dated.filter(p=>p.qty>0&&p.qty<=1).length],['aging','Stok lama',dated.filter(p=>p.qty>0&&p.age>30).length],['empty','Habis',dated.filter(p=>p.qty<=0).length]];
   return `${stockDateControls()}${tabs(statuses)}<div class="table-toolbar">${searchBox('Cari produk, IMEI, atau supplier...')}<div class="filters"><select id="channel" aria-label="Merek"><option value="all">Semua merek</option>${brands.map(b=>`<option ${b===channel?'selected':''}>${esc(b)}</option>`).join('')}</select><select id="supplierFilter" aria-label="Supplier"><option value="all">Semua supplier</option>${suppliers.map(s=>`<option value="${s.id}" ${supplierFilter===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select><select id="sort" aria-label="Urutan">${[['date','Terbaru'],['oldest','Tanggal masuk terlama'],['name','Nama produk A-Z'],['qty','Stok terendah'],['cost','HPP tertinggi']].map(([v,l])=>`<option value="${v}" ${sort===v?'selected':''}>${l}</option>`).join('')}</select></div></div><div class="inventory-view-options"><label class="inventory-available"><input id="stockOnlyAvailable" type="checkbox" ${stockOnlyAvailable?'checked':''}>Hanya tersedia</label><div class="segmented" role="group" aria-label="Tampilan inventori"><button data-stock-view="groups" class="${stockPresentation==='groups'?'active':''}" aria-pressed="${stockPresentation==='groups'}">${icon('layers')}Per produk</button><button data-stock-view="units" class="${stockPresentation==='units'?'active':''}" aria-pressed="${stockPresentation==='units'}">${icon('list')}Per barang masuk</button></div></div><div id="inventorySummary" class="inventory-summary" role="status" aria-label="Ringkasan hasil filter">${inventorySummary(rows)}</div><div id="listResults">${inventoryResults(rows)}</div>`;
 }
@@ -50,4 +52,3 @@ moduleViews.stock=inventoryView;
 document.addEventListener('change',e=>{if(e.target.id==='stockOnlyAvailable'){stockOnlyAvailable=e.target.checked;if(stockOnlyAvailable&&filter==='empty')filter='all';page=1;render();}});
 document.addEventListener('click',e=>{const b=e.target.closest('[data-stock-view]');if(b){stockPresentation=b.dataset.stockView;page=1;render();}if(view==='stock'&&e.target.closest('[data-filter-tab="empty"]')){stockOnlyAvailable=false;render();}});
 document.addEventListener('toggle',e=>{const key=e.target.dataset?.stockGroup;if(key){if(e.target.open)expandedStockGroups.add(key);else expandedStockGroups.delete(key);}},true);
-
