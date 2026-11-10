@@ -122,6 +122,18 @@ run("cards[0].due=cardCharges[0].installment.schedule[0].dueDate;cardCharges.pus
 assert.equal((run('dueBanner').match(/Test Bank \/ Visa/g)||[]).length,1,'One label for ordinary billing and many same-day installments');
 assert.match(run('dueBanner'),/Other Bank \/ Unused/);assert.doesNotMatch(run('dueBanner'),/cicilan|1234/i);
 const entry=fs.readFileSync(path.join(root,'index.html'),'utf8');
+run(`cardCharges=[11,13,12,24,3].map(months=>({id:'t'+months,note:'Plan '+months,cardId:months===13?'unused':'cc',amount:2400000,date:'2026-10-01',
+  installment:buildInstallment(2400000,{months,firstMonth:'2026-11',statementDay:1,dueAfterDays:5,admin:0,adminMode:'first',interestMode:'none',...(months===24?{opening:{paidMonths:23,asOf:TODAY}}:{})})}));
+  installmentMonth='all';installmentFilter='active';selectedCard='all';installmentBank='';`);
+for(const [tenor,expected] of [['short',[3,11]],['year',[12]],['long',[24,13]]]){
+  context.tenor=tenor;run('installmentTenor=tenor;html=installmentView()');
+  assert.deepEqual(plain('filteredInstallmentPlans().map(c=>c.installment.months)'),expected);
+  assert.match(run('html'),new RegExp('value="'+tenor+'" selected'));
+}
+run("installmentBank='test bank';html=installmentView();exportInstallments()");
+assert.match(run('html'),/1-1 dari 1 pembelian/);assert.match(run('html'),/Tenor 24 bulan/);
+assert.match(run('csv'),/Plan 24/);assert.doesNotMatch(run('csv'),/Plan (13|12|11|3)"/);
+run("installmentTenor='all';installmentBank='';");assert.equal(run('filteredInstallmentPlans().length'),5);
 assert.doesNotMatch(entry,/data-calculator|id="calculator"/);assert.match(entry,/data-nav="marketplace"/);
 assert.equal(run("typeof calculatorKey"),'undefined');assert.equal(run("parseMoneyInput('1.234.567')"),'1234567');
 console.log('PASS: ten-row pagination, month/card/status filters, whole-filter summaries, idempotent repayments, manual matching, pending/unknown/installment exclusions, corrections/reversals, net cash caps, balanced journal, reversible duplicate removal.');

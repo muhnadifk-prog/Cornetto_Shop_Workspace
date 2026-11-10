@@ -1,5 +1,5 @@
 'use strict';
-let installmentFilter='active',installmentMonth='all';
+let installmentFilter='active',installmentMonth='all',installmentTenor='all';
 const installmentCurrency=n=>'Rp '+rupiah(cents(n)).toLocaleString('id-ID',{maximumFractionDigits:2});
 const installmentBookLine=(label,value,total=false)=>bookLine(label,value,total,installmentCurrency);
 function installmentInterestLabel(mode){return mode==='flat'?'Bunga flat per bulan (%)':mode==='monthly'?'Cicilan per bulan, di luar admin (Rp)':'Total bunga dari bank (Rp)';}
@@ -74,11 +74,11 @@ function installmentView(){
   syncCardActivityFilters(true);
   const plans=filteredInstallmentPlans(),info=cardActivityPage(plans,'installments');
   return `<div class="section-heading card-activity-heading"><h2>Cicilan pembelian</h2><div class="heading-actions"><button class="icon-button" data-install-action="export" title="Ekspor jadwal cicilan" aria-label="Ekspor jadwal cicilan">${icon('download')}</button><button class="button" data-install-action="add">${icon('plus')}Atur cicilan</button></div></div>
-    <div class="table-toolbar card-activity-toolbar"><div class="filters"><select id="installmentBank" aria-label="Filter bank">${installmentBankOptions()}</select><select id="paymentCard" aria-label="Filter kartu">${cardFilterOptions(installmentBank)}</select><select id="installmentFilter" aria-label="Status cicilan">${[['active','Belum lunas'],['paid','Lunas'],['all','Semua cicilan']].map(([id,label])=>`<option value="${id}" ${installmentFilter===id?'selected':''}>${label}</option>`).join('')}</select>${cardMonthSelect('installmentMonth','Bulan tagihan cicilan',installmentMonth,installmentCharges().flatMap(c=>c.installment.schedule.map(r=>r.dueDate)))}</div></div>
+    <div class="table-toolbar card-activity-toolbar"><div class="filters"><select id="installmentBank" aria-label="Filter bank">${installmentBankOptions()}</select><select id="paymentCard" aria-label="Filter kartu">${cardFilterOptions(installmentBank)}</select><select id="installmentFilter" aria-label="Status cicilan">${[['active','Belum lunas'],['paid','Lunas'],['all','Semua cicilan']].map(([id,label])=>`<option value="${id}" ${installmentFilter===id?'selected':''}>${label}</option>`).join('')}</select><select id="installmentTenor" aria-label="Filter tenor awal">${[['all','Semua tenor'],['short','Kurang dari 12 bulan'],['year','Tepat 12 bulan'],['long','Lebih dari 12 bulan']].map(([id,label])=>`<option value="${id}" ${installmentTenor===id?'selected':''}>${label}</option>`).join('')}</select>${cardMonthSelect('installmentMonth','Bulan tagihan cicilan',installmentMonth,installmentCharges().flatMap(c=>c.installment.schedule.map(r=>r.dueDate)))}</div></div>
     ${installmentSummary(plans)}
     <div class="module-table card-activity-table"><table><thead><tr><th>Pembelian</th><th>Kartu</th><th>Progres</th><th class="numeric">Sisa seluruh jadwal</th><th>Jatuh tempo berikutnya</th><th></th></tr></thead><tbody>${info.rows.map(c=>{
       const rows=c.installment.schedule,paid=rows.filter(r=>installmentRemaining(c,r)<=0).length,next=rows.find(r=>installmentRemaining(c,r)>0);
-      return `<tr><td><strong>${esc(c.note)}</strong><div class="product-sub">Pokok ${installmentCurrency(c.amount)}</div></td><td>${esc(cardName(c.cardId))}</td><td>${paid} / ${rows.length} lunas</td><td class="numeric">${installmentCurrency(sum(rows,r=>installmentRemaining(c,r)))}</td><td>${next?cardDate(next.dueDate):'Lunas'}</td><td><button class="icon-button" data-install-action="detail" data-id="${c.id}" aria-label="Rincian cicilan ${esc(c.note)}" title="Rincian cicilan">${icon('arrow-up-right')}</button></td></tr>`;
+      return `<tr><td><strong>${esc(c.note)}</strong><div class="product-sub">Pokok ${installmentCurrency(c.amount)} / Tenor ${c.installment.months} bulan</div></td><td>${esc(cardName(c.cardId))}</td><td>${paid} / ${rows.length} lunas</td><td class="numeric">${installmentCurrency(sum(rows,r=>installmentRemaining(c,r)))}</td><td>${next?cardDate(next.dueDate):'Lunas'}</td><td><button class="icon-button" data-install-action="detail" data-id="${c.id}" aria-label="Rincian cicilan ${esc(c.note)}" title="Rincian cicilan">${icon('arrow-up-right')}</button></td></tr>`;
     }).join('')||'<tr><td colspan="6" class="empty">Belum ada cicilan pada filter ini.</td></tr>'}</tbody></table></div>${cardActivityPager(info,'installments','pembelian')}`;
 }
 function installmentDetail(id){
@@ -105,7 +105,7 @@ function routeInstallmentPayment(cardId,paymentId,ordinary){
 }
 function exportInstallments(){
   const rows=[['Kartu','Pembelian','Angsuran','Cetak','Jatuh tempo','Pokok','Bunga','Admin','Total','Dibayar','Sisa']];
-  for(const c of installmentCharges().filter(matchesInstallmentCard))for(const r of c.installment.schedule)rows.push([cardName(c.cardId),c.note,r.number,r.statementDate,r.dueDate,r.principal,r.interest,r.admin,installmentRowTotal(r),installmentPaid(c.id,r.number),installmentRemaining(c,r)]);
+  for(const c of filteredInstallmentPlans())for(const r of c.installment.schedule)rows.push([cardName(c.cardId),c.note,r.number,r.statementDate,r.dueDate,r.principal,r.interest,r.admin,installmentRowTotal(r),installmentPaid(c.id,r.number),installmentRemaining(c,r)]);
   downloadData('cicilan-kartu_'+TODAY+'.csv','\ufeff'+rows.map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n'),'text/csv;charset=utf-8');
 }
 document.addEventListener('click',e=>{
@@ -138,6 +138,7 @@ for(const event of ['input','change'])document.addEventListener(event,e=>{
 document.addEventListener('change',e=>{
   if(e.target.id==='installmentFilter'){installmentFilter=e.target.value;installmentPage=1;render();}
   if(e.target.id==='installmentMonth'){installmentMonth=e.target.value||'all';installmentPage=1;render();}
+  if(e.target.id==='installmentTenor'){installmentTenor=e.target.value;installmentPage=1;render();}
 });
 document.addEventListener('submit',e=>{
   const f=e.target;if(!['installmentForm','installmentPaymentForm'].includes(f.id))return;e.preventDefault();

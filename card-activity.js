@@ -36,7 +36,15 @@ function cardActivityPage(rows,kind){
 function cardActivityPager(info,kind,label){return `<div class="table-foot card-activity-pager"><span>Menampilkan ${info.total?(info.current-1)*10+1:0}-${Math.min(info.current*10,info.total)} dari ${info.total} ${label}</span><div class="pagination"><button class="icon-button" data-credit-page="${info.current-1}" data-kind="${kind}" ${info.current===1?'disabled':''} title="Halaman sebelumnya" aria-label="Halaman sebelumnya">${icon('chevron-left')}</button><span class="page-number">${info.current}</span><span>dari ${info.pages}</span><button class="icon-button" data-credit-page="${info.current+1}" data-kind="${kind}" ${info.current===info.pages?'disabled':''} title="Halaman berikutnya" aria-label="Halaman berikutnya">${icon('chevron-right')}</button></div></div>`;}
 function cardActivitySummary(items,label){return `<div class="inventory-summary card-activity-summary" role="status" aria-label="${label}">${items.map(([name,value])=>`<span>${esc(name)} <strong>${value}</strong></span>`).join('')}</div>`;}
 function filteredInstallmentPlans(){
-  return installmentCharges().filter(c=>matchesInstallmentCard(c)&&(installmentFilter==='all'||(installmentFilter==='paid')===c.installment.schedule.every(r=>installmentRemaining(c,r)<=0))&&(installmentMonth==='all'||c.installment.schedule.some(r=>r.dueDate?.startsWith(installmentMonth)))).slice().sort((a,b)=>b.date.localeCompare(a.date)||a.id.localeCompare(b.id));
+  const plans=installmentCharges().filter(c=>{
+    const {months,schedule}=c.installment;
+    if(installmentTenor==='short'&&months>=12||installmentTenor==='year'&&months!==12||installmentTenor==='long'&&months<=12)return false;
+    return matchesInstallmentCard(c)&&(installmentFilter==='all'||(installmentFilter==='paid')===schedule.every(r=>installmentRemaining(c,r)<=0))&&(installmentMonth==='all'||schedule.some(r=>r.dueDate?.startsWith(installmentMonth)));
+  });
+  return plans.sort((a,b)=>{
+    const delta=a.installment.months-b.installment.months;
+    return (installmentTenor==='short'?delta:installmentTenor==='long'?-delta:0)||b.date.localeCompare(a.date)||a.id.localeCompare(b.id);
+  });
 }
 function installmentSummary(plans){
   const rows=plans.flatMap(charge=>charge.installment.schedule.map(row=>({charge,row}))),due=rows.filter(({row})=>row.dueDate&&(installmentMonth==='all'||row.dueDate.startsWith(installmentMonth)));
