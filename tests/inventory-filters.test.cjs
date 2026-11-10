@@ -7,6 +7,13 @@ for(const file of ['card-schedule.js','card-groups.js','cornetto-modules.js','co
   vm.runInContext(code,ctx,{filename:file});
 }
 const run=s=>vm.runInContext(s,ctx),plain=s=>JSON.parse(JSON.stringify(run(s)));
+const options=run('stockBrandOptions()');
+for(const name of ['Apple','Google','Samsung','Xiaomi','REDMI','POCO','iQOO','itel','TECNO','vivo','OPPO','ADVAN','Infinix','realme'])assert.ok(options.includes('value="'+name+'"'));
+assert.match(options,/value="Apple" selected/);assert.ok(options.endsWith('<option value="Lainnya">Lainnya</option>'));
+assert.deepEqual(plain('stockPhoneBrands'),plain("stockPhoneBrands.slice().sort((a,b)=>a.localeCompare(b,'id',{sensitivity:'base'}))"));
+const legacy=run("stockBrandOptions('Oppo')");assert.match(legacy,/value="Oppo" selected>OPPO/);assert.equal((legacy.match(/value="oppo"/gi)||[]).length,1);
+assert.match(run("stockBrandOptions('Impor & lama')"),/value="Impor &amp; lama" selected/);
+assert.match(run("stockBrandOptions('')"),/value="" selected>Belum diisi/);
 run(`emptyWorkspace();inventory=[
 {id:'a',date:'2026-01-01',name:'Phone',variant:'Blue',supplier:'Shop',brand:'Apple',sku:'internal-a',imei:'001234567890123',qty:1,age:30,cost:1},
 {id:'b',date:'2026-01-02',name:'Phone',variant:'Blue',supplier:'Shop',brand:'Apple',sku:'internal-b',qty:1,age:29,cost:2},

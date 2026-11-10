@@ -95,7 +95,7 @@ function editStockForm(id){
     ${field('Tanggal masuk','date','date',p.date||'',`min="2000-01-01" max="${TODAY}"${p.date?' required':''}`)}
     ${field('Nama produk','name','text',p.name,'required maxlength="200"')}
     ${field('Varian / kapasitas / warna','variant','text',p.variant,'maxlength="200"')}
-    <div class="field-pair">${selectField('Merek','brand',stockEditOptions(['Apple','Samsung','Google','Xiaomi','Lainnya'],p.brand))}${field('Sisa stok (unit)','qty','number',p.qty,`required step="1" min="${Math.min(0,p.qty)}"`)}</div>
+    <div class="field-pair">${selectField('Merek','brand',stockBrandOptions(p.brand??''))}${field('Sisa stok (unit)','qty','number',p.qty,`required step="1" min="${Math.min(0,p.qty)}"`)}</div>
     <div class="field-pair">${field('HPP per unit (Rp)','cost','number',p.cost,'required min="0" step="0.01"')}${field('Harga jual per unit (Rp)','price','number',p.price,'required min="0" step="0.01"')}</div>
     ${selectField('Supplier','supplierId',(suppliers.some(s=>s.id===p.supplierId)?'':`<option value="${esc(p.supplierId||'')}">${esc(p.supplier||'Belum diketahui')}</option>`)+supplierOptions)}
     <div class="field-pair">${selectField('Kategori','category',stockEditOptions(business.categories,p.category))}${selectField('Kondisi','condition',stockEditOptions(business.conditions,p.condition))}</div>
