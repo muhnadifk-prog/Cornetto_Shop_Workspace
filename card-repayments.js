@@ -19,7 +19,7 @@ function saleRepaymentPlans(state,asOf=TODAY){
   const ordered=state.sales.filter(s=>s.status==='paid').slice().sort((a,b)=>Number(previous.has(b.id))-Number(previous.has(a.id))||(a.settlementDate||a.date).localeCompare(b.settlementDate||b.date)||a.id.localeCompare(b.id));
   for(const s of ordered){
     const p=products.get(s.productId),links=state.cardCharges.filter(c=>c.productId===s.productId||c.productIds?.includes(s.productId));
-    if(skips.has(s.id)||(!links.length&&!cardIds.has(p?.payMethod)))continue;
+    if(skips.has(s.id)||(!links.length&&p?.deletedAt&&(p.cancelledPurchases?.length||p.cancelledInstallments?.length))||(!links.length&&!cardIds.has(p?.payMethod)))continue;
     if(links.length===1&&links[0].installment)continue;
     const c=links.length===1?links[0]:null,target=Math.max(0,Math.min(cents(s.cost*s.qty),cents(s.price*s.qty-s.fee-(s.shipping||0))));
     const result={sale:s,charge:c,target:rupiah(target),amount:0,matched:0,reason:''};rows.push(result);

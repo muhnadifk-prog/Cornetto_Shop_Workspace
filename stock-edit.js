@@ -8,30 +8,31 @@ function stockLinks(state,id){
     imports:(state.migration?.installmentImport?.rows||[]).filter(references)
   };
 }
-function stockInstallmentDeletion(state,id){
-  const linked=stockLinks(state,id).charges.filter(c=>c.installment);
-  const productIds=c=>[...new Set([c.productId,...(c.productIds||[])].filter(Boolean))];
-  const shared=linked.filter(c=>productIds(c).some(pid=>pid!==id&&!state.inventory.find(p=>p.id===pid)?.deletedAt));
+function stockChargeProducts(c){return [...new Set([c.productId,...(c.productIds||[])].filter(Boolean))];}
+function stockFundingDeletion(state,id){
+  const linked=stockLinks(state,id).charges.filter(c=>c.source!=='cash-loan'&&!state.ledger.some(r=>r.type==='pinjam'&&r.chargeId===c.id));
+  const shared=linked.filter(c=>stockChargeProducts(c).some(pid=>pid!==id&&!state.inventory.find(p=>p.id===pid)?.deletedAt));
   const charges=linked.filter(c=>!shared.includes(c)),ids=new Set(charges.map(c=>c.id));
-  const payments=state.cardPayments.filter(p=>ids.has(p.installmentChargeId)||ids.has(p.purchaseChargeId));
+  const payments=state.cardPayments.filter(p=>ids.has(p.installmentChargeId)||(p.source==='auto-sale'&&ids.has(p.purchaseChargeId)));
+  const allocatedPayments=state.cardPayments.filter(p=>p.saleAllocations?.some(a=>ids.has(a.chargeId)));
   const paymentIds=new Set(payments.map(p=>p.id));
-  return {charges,shared,payments,
-    ledger:state.ledger.filter(r=>ids.has(r.chargeId)||paymentIds.has(r.paymentId)||payments.some(p=>r.id==='ledger-'+p.id)),
+  return {charges,shared,payments,allocatedPayments,
+    ledger:state.ledger.filter(r=>paymentIds.has(r.paymentId)||payments.some(p=>r.id==='ledger-'+p.id)||(!r.paymentId&&ids.has(r.chargeId))),
     corrections:(state.business.expenseCorrections||[]).filter(r=>ids.has(r.chargeId)),
     imports:(state.migration?.installmentImport?.rows||[]).filter(r=>ids.has(r.chargeId)||charges.some(c=>c.importRowId===r.id)),
-    products:state.inventory.filter(p=>linked.some(c=>productIds(c).includes(p.id)))
+    products:state.inventory.filter(p=>linked.some(c=>stockChargeProducts(c).includes(p.id)))
   };
 }
-function stockBaseline(state,id){return JSON.stringify({product:state.inventory.find(p=>p.id===id),links:stockLinks(state,id),installments:stockInstallmentDeletion(state,id)});}
+function stockBaseline(state,id){return JSON.stringify({product:state.inventory.find(p=>p.id===id),links:stockLinks(state,id),funding:stockFundingDeletion(state,id)});}
 function deletedInstallmentProduct(c){
-  return [c.productId,...(c.productIds||[])].filter(Boolean).find(id=>productById(id)?.deletedAt&&stockInstallmentDeletion(snapshot(),id).charges.some(row=>row.id===c.id));
+  return stockChargeProducts(c).find(id=>productById(id)?.deletedAt&&stockFundingDeletion(snapshot(),id).charges.some(row=>row.id===c.id));
 }
 function stockFundingLocked(product,links){
   return !!(links.charges.length||links.ledger.length||links.imports.length||(product.payMethod&&!['cash','unknown'].includes(product.payMethod)));
 }
 function stockDeleteReason(state,id){
   const p=state.inventory.find(p=>p.id===id);if(!p)return 'Barang tidak ditemukan.';
-  if(p.deletedAt&&!stockInstallmentDeletion(state,id).charges.length)return 'Barang sudah dihapus dari inventori.';
+  if(p.deletedAt&&!stockFundingDeletion(state,id).charges.length)return 'Barang sudah dihapus dari inventori.';
   return '';
 }
 function prepareStockEdit(state,id,d,baseline){
@@ -63,27 +64,77 @@ function prepareStockEdit(state,id,d,baseline){
 function prepareStockDelete(state,id,baseline,confirmPayments=false){
   if(stockBaseline(state,id)!==baseline)throw Error('Data barang atau transaksi terkait berubah. Buka ulang konfirmasi hapus.');
   const reason=stockDeleteReason(state,id);if(reason)throw Error(reason);
-  const next=structuredClone(state),p=next.inventory.find(p=>p.id===id),links=stockLinks(next,id);
-  const removal=stockInstallmentDeletion(next,id);
-  if(removal.payments.length&&!confirmPayments)throw Error('Konfirmasi penghapusan catatan pembayaran cicilan terkait terlebih dahulu.');
+  const next=structuredClone(state);
+  cancelStockPurchase(next,id,confirmPayments);
+  return next;
+}
+function cancelStockPurchase(next,id,confirmPayments){
+  const p=next.inventory.find(p=>p.id===id),links=stockLinks(next,id);
+  const removal=stockFundingDeletion(next,id);
+  if(removal.payments.length&&!confirmPayments)throw Error('Konfirmasi penghapusan catatan pembayaran terkait terlebih dahulu.');
   if(removal.charges.length){
     // Preserve a recoverable copy outside live balances and automatic posting.
-    p.cancelledInstallments??=[];
-    const {products,shared,...records}=removal;
-    p.cancelledInstallments.push({deletedAt:new Date().toISOString(),...structuredClone(records)});
+    const history=removal.charges.every(c=>c.installment)?'cancelledInstallments':'cancelledPurchases';
+    p[history]??=[];
+    const {products,shared,allocatedPayments,...records}=removal;
+    const allocations=allocatedPayments.map(pay=>({paymentId:pay.id,allocations:pay.saleAllocations.filter(a=>removal.charges.some(c=>c.id===a.chargeId))}));
+    p[history].push({deletedAt:new Date().toISOString(),...structuredClone(records),allocations});
     const chargeIds=new Set(removal.charges.map(c=>c.id)),paymentIds=new Set(removal.payments.map(r=>r.id)),ledgerIds=new Set(removal.ledger.map(r=>r.id));
     next.cardCharges=next.cardCharges.filter(c=>!chargeIds.has(c.id));
     next.cardPayments=next.cardPayments.filter(r=>!paymentIds.has(r.id));
+    for(const pay of allocatedPayments){
+      pay.saleAllocations=pay.saleAllocations.filter(a=>!chargeIds.has(a.chargeId));
+    }
     next.ledger=next.ledger.filter(r=>!ledgerIds.has(r.id));
     next.business.expenseCorrections=(next.business.expenseCorrections||[]).filter(r=>!chargeIds.has(r.chargeId));
+    for(const pid of new Set(removal.charges.flatMap(stockChargeProducts))){
+      const product=next.inventory.find(row=>row.id===pid);
+      const remaining=stockLinks(next,pid);
+      if(product&&!remaining.charges.length&&!remaining.sales.length)product.purchaseCancelled=true;
+    }
     for(const row of removal.imports){row.status='pending';row.dismissed=true;row.reason='Dibatalkan bersama penghapusan barang inventori.';delete row.chargeId;delete row.activatedAt;delete row.kind;delete row.productId;}
   }
   // Sales retain their original cost and product reference after stock deletion.
   if(links.sales.length||stockFundingLocked(p,links)||p.qty!==p.purchasedQty){
     if(!p.deletedAt){p.deletedAt=new Date().toISOString();p.deletedStockQty=p.qty;}p.qty=0;
   }else next.inventory=next.inventory.filter(p=>p.id!==id);
+}
+function deletedChargeAudit(state){
+  const products=new Map(state.inventory.map(p=>[p.id,p]));
+  return state.cardCharges.flatMap(c=>{
+    const ids=stockChargeProducts(c);
+    if(!ids.length||c.source==='cash-loan'||state.ledger.some(r=>r.type==='pinjam'&&r.chargeId===c.id))return [];
+    const linked=ids.map(id=>products.get(id));
+    if(linked.every(p=>p&&!p.deletedAt))return [];
+    const owner=linked.find(p=>p?.deletedAt);
+    if(linked.some(p=>!p))return [{charge:c,reason:'Referensi barang tidak lengkap.'}];
+    if(linked.some(p=>!p.deletedAt))return [{charge:c,reason:'Tagihan gabungan masih membiayai barang aktif.'}];
+    const links=stockLinks(state,owner.id),removal=stockFundingDeletion(state,owner.id);
+    const simple=ids.length===1&&links.charges.length===1&&!c.installment&&!links.sales.length&&!links.ledger.length&&
+      !links.imports.length&&!removal.payments.length&&!removal.allocatedPayments.length&&!removal.ledger.length&&
+      owner.deletedStockQty===owner.purchasedQty&&owner.payMethod===c.cardId&&Math.abs(owner.cost*owner.purchasedQty-c.amount)<0.005;
+    return [{charge:c,owner:owner.id,simple,reason:simple?'Seluruh unit dihapus sebelum terjual.':links.sales.length?'Ada penjualan terkait.':'Periksa rincian pembiayaan.'}];
+  });
+}
+function simpleRepairBaseline(rows){return JSON.stringify(rows.filter(r=>r.simple).map(r=>[r.owner,r.charge.id,r.charge.cardId,r.charge.amount,r.charge.date]));}
+function prepareDeletedChargeRepair(state,baseline){
+  const rows=deletedChargeAudit(state),simple=rows.filter(r=>r.simple);
+  if(!simple.length||simpleRepairBaseline(rows)!==baseline)throw Error('Daftar tagihan berubah. Buka ulang pemeriksaan.');
+  const next=structuredClone(state);
+  for(const row of simple)cancelStockPurchase(next,row.owner,false);
   return next;
 }
+function deletedChargeNotice(){
+  const count=deletedChargeAudit(snapshot()).length;
+  return count?`<div class="repayment-review"><span>${count} tagihan terkait stok terhapus atau referensi barang yang belum lengkap</span><button class="button" data-stock-audit>Periksa tagihan stok</button></div>`:'';
+}
+function deletedChargeReview(){
+  const state=snapshot(),rows=deletedChargeAudit(state),simple=rows.filter(r=>r.simple);
+  const list=rows.map(({charge,owner,simple,reason})=>`<div class="expense-row"><div><strong>${esc(charge.note)}</strong><p>${esc(cardName(charge.cardId))} · ${cardDate(charge.date)} · ${esc(charge.id)}</p><p>${esc(reason)}</p></div><strong>${money(charge.amount)}</strong>${owner&&!simple?`<button type="button" class="button" data-action="delete-stock" data-id="${esc(owner)}">Tinjau</button>`:''}</div>`).join('');
+  openDrawer('Periksa tagihan stok',`<form id="stockRepairForm">${list||emptyState('Semua tagihan stok sudah diperiksa.')}${simple.length?`<p class="stock-edit-note">Pembatalan mencakup ${simple.length} tagihan biasa untuk barang yang seluruh unitnya sudah dihapus. Limit di tracker dihitung ulang pada masing-masing kartu.</p>${bookLine('Total tagihan yang dibatalkan',sum(simple,r=>r.charge.amount))}${formFooter('Batalkan '+simple.length+' tagihan stok')}`:''}</form>`,'SELURUH KARTU');
+  el('stockRepairForm').dataset.baseline=simpleRepairBaseline(rows);
+}
+document.addEventListener('click',e=>{if(e.target.closest('[data-stock-audit]'))deletedChargeReview();});
 function stockDetailActions(p){return `<div class="stock-detail-actions"><button class="button" data-action="copy-stock" data-id="${p.id}">${icon('copy')}Salin barang masuk</button><button class="button" data-action="edit-stock" data-id="${p.id}">${icon('pencil')}Edit barang</button><button class="button stock-delete" data-action="delete-stock" data-id="${p.id}">${icon('trash-2')}Hapus barang</button></div>`;}
 function stockEditOptions(values,current){return [...new Set([current||'',...values])].map(value=>`<option value="${esc(value)}" ${value===(current||'')?'selected':''}>${esc(value)||'Belum diisi'}</option>`).join('');}
 function editStockForm(id){
@@ -110,26 +161,26 @@ function deleteStockForm(id){
   const state=snapshot(),p=productById(id);if(!p)return;
   const reason=stockDeleteReason(state,id);
   const links=stockLinks(state,id),archive=links.sales.length||stockFundingLocked(p,links)||p.qty!==p.purchasedQty;
-  const removal=stockInstallmentDeletion(state,id),cleanup=!!p.deletedAt;
-  const message=removal.charges.length?'Barang dan cicilan terkait dihapus dari catatan aktif, termasuk pokok utang, jadwal, bunga/admin, dan pembayaran yang khusus terhubung. Pencatatan otomatis berhenti. Riwayat penjualan tetap; salinan catatan yang dibatalkan disimpan dalam backup barang. Ini tidak membatalkan transaksi di bank.':archive?'Barang dihapus dari daftar inventori dan sisa stok menjadi nol. Riwayat penjualan serta tagihan biasa tetap tersimpan.':'Barang beserta lampiran invoice-nya akan dihapus dari inventori. Tindakan ini tidak dapat dibatalkan.';
-  const financeSummary=removal.charges.length?`${bookLine('Pokok cicilan yang dibatalkan',sum(removal.charges,c=>c.amount))}${bookLine('Catatan pembayaran yang ikut dihapus',sum(removal.payments,r=>r.amount))}`:'';
-  const paymentConfirmation=removal.payments.length?`<label class="purchase-finance-option"><input type="checkbox" name="confirmPayments" required><span>Saya setuju menghapus ${removal.payments.length} catatan pembayaran cicilan terkait beserta mutasi pembukuannya.</span></label>`:'';
-  const sharedNotice=removal.shared.length?'<p class="stock-edit-note">Ada cicilan gabungan dengan barang lain yang belum dihapus. Cicilan gabungan tersebut tetap tersimpan agar tagihan barang lain tidak ikut hilang.</p>':'';
-  openDrawer(reason?'Barang tidak dapat dihapus':cleanup?'Hapus cicilan barang terhapus?':'Hapus barang?',`<form id="stockDeleteForm" data-id="${esc(id)}"><div class="stock-delete-summary"><strong>${esc(p.name)}</strong><p>${esc(p.variant)}${p.imei?' / IMEI '+esc(p.imei):''}</p></div>
-    ${reason?`<p class="stock-edit-note" role="status">${esc(reason)}</p><div class="form-footer"><button type="button" class="button" data-action="cancel">Tutup</button></div>`:`<div class="detail-lines">${bookLine('Nilai stok yang dihapus',p.cost*Math.max(0,p.qty))}<div class="book-line"><span>Sisa stok</span><strong>${p.qty} unit</strong></div>${financeSummary}</div><p class="stock-edit-note">${message} Perubahan disinkronkan ke cloud jika aktif.</p>${sharedNotice}${paymentConfirmation}<p id="formError" class="form-error" role="alert"></p><div class="form-footer"><button type="button" class="button" data-action="cancel">Batal</button><button type="submit" class="button danger">${icon('trash-2')}${cleanup?'Hapus cicilan':removal.charges.length?'Hapus barang & cicilan':'Hapus barang'}</button></div>`}</form>`,'INVENTORI');
+  const removal=stockFundingDeletion(state,id),cleanup=!!p.deletedAt;
+  const message=removal.charges.length?'Tagihan pembelian ini dibatalkan. Utang dan sisa limit di tracker dihitung ulang setelah memperhitungkan pembayaran terkait. Riwayat pembatalan tersimpan di backup.':archive?'Barang diarsipkan dan sisa stok menjadi nol.':'Barang dan lampiran invoice dihapus dari inventori.';
+  const financeSummary=removal.charges.length?`${bookLine('Pokok tagihan yang dibatalkan',sum(removal.charges,c=>c.amount))}${bookLine('Catatan pembayaran yang ikut dihapus',sum(removal.payments,r=>r.amount))}${bookLine('Perubahan sisa limit di tracker',sum(removal.charges,c=>c.amount-openingInstallmentPrincipal(c)+installmentFees(c))-sum(removal.payments,r=>r.amount))}`:'';
+  const paymentConfirmation=removal.payments.length?`<label class="purchase-finance-option"><input type="checkbox" name="confirmPayments" required><span>Saya setuju menghapus ${removal.payments.length} catatan pembayaran terkait beserta mutasi pembukuannya.</span></label>`:'';
+  const sharedNotice=removal.shared.length?'<p class="stock-edit-note">Tagihan gabungan masih membiayai barang lain dan akan diperiksa kembali saat barang terakhir dihapus.</p>':'';
+  openDrawer(reason?'Barang tidak dapat dihapus':cleanup?'Batalkan tagihan stok terhapus?':'Hapus barang?',`<form id="stockDeleteForm" data-id="${esc(id)}"><div class="stock-delete-summary"><strong>${esc(p.name)}</strong><p>${esc(p.variant)}${p.imei?' / IMEI '+esc(p.imei):''}</p></div>
+    ${reason?`<p class="stock-edit-note" role="status">${esc(reason)}</p><div class="form-footer"><button type="button" class="button" data-action="cancel">Tutup</button></div>`:`<div class="detail-lines">${bookLine('Nilai stok yang dihapus',p.cost*Math.max(0,p.qty))}<div class="book-line"><span>Sisa stok</span><strong>${p.qty} unit</strong></div>${financeSummary}</div><p class="stock-edit-note">${message} ${links.sales.length?'Ada '+links.sales.length+' penjualan terkait. Riwayat penjualan dan HPP tersimpan.':''}</p>${sharedNotice}${paymentConfirmation}<p id="formError" class="form-error" role="alert"></p><div class="form-footer"><button type="button" class="button" data-action="cancel">Batal</button><button type="submit" class="button danger">${icon('trash-2')}${cleanup?'Batalkan tagihan':removal.charges.length?'Hapus barang & tagihan':'Hapus barang'}</button></div>`}</form>`,'INVENTORI');
   el('stockDeleteForm').dataset.baseline=stockBaseline(state,id);
 }
 document.addEventListener('submit',async e=>{
-  const f=e.target;if(!['stockEditForm','stockDeleteForm'].includes(f.id))return;
+  const f=e.target;if(!['stockEditForm','stockDeleteForm','stockRepairForm'].includes(f.id))return;
   e.preventDefault();if(f.dataset.saving)return;
   const button=f.querySelector('button[type="submit"]');if(!button)return;
   f.dataset.saving='true';button.disabled=true;
   let saving=false;
   try{
     await saveQueue;if(storageFailed)throw Error('Penyimpanan belum siap. Backup data sebelum mencoba lagi.');
-    const state=snapshot(),next=f.id==='stockEditForm'?prepareStockEdit(state,f.dataset.id,Object.fromEntries(new FormData(f)),f.dataset.baseline):prepareStockDelete(state,f.dataset.id,f.dataset.baseline,f.elements.confirmPayments?.checked===true);
+    const state=snapshot(),next=f.id==='stockRepairForm'?prepareDeletedChargeRepair(state,f.dataset.baseline):f.id==='stockEditForm'?prepareStockEdit(state,f.dataset.id,Object.fromEntries(new FormData(f)),f.dataset.baseline):prepareStockDelete(state,f.dataset.id,f.dataset.baseline,f.elements.confirmPayments?.checked===true);
     validateSnapshot(next);savePending++;saving=true;updateStorageBadge();
-    await persist(next);applyState(next);closeDrawer();render();toast(f.id==='stockEditForm'?'Inventori diperbarui.':stockInstallmentDeletion(state,f.dataset.id).charges.length?'Barang dan cicilan terkait sudah dihapus.':'Barang dihapus.');
+    await persist(next);applyState(next);closeDrawer();render();toast(f.id==='stockEditForm'?'Inventori diperbarui.':f.id==='stockRepairForm'?'Tagihan stok dibatalkan. Limit kartu diperbarui.':stockFundingDeletion(state,f.dataset.id).charges.length?'Barang dan tagihan dibatalkan. Limit kartu diperbarui.':'Barang dihapus.');
   }catch(err){formError(err.message);}
   finally{if(saving)savePending--;updateStorageBadge();delete f.dataset.saving;if(button.isConnected)button.disabled=false;}
 });

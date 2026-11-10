@@ -31,6 +31,7 @@ function buildBookReport(state,range,today){
     if(s.status==='paid')entry(s.settlementDate||s.date,s.id+'-cair','Penerimaan '+s.id,[[1100,net],[1200,-net]],s.settlementDate?'':'Tanggal pencairan tidak tersimpan; diasumsikan tanggal penjualan');
   }
   for(const p of state.inventory){
+    if(p.purchaseCancelled)continue;
     const amount=reportNumber(p.purchasedQty*p.cost),pay=p.payMethod==='cash'?1100:cardNames.has(p.payMethod)?2110:9990;
     entry(p.date,'stock-'+p.id,'Pembelian '+p.name,[[1300,amount],[pay,-amount]],'Nilai rekonstruksi dari jumlah masuk dan HPP saat ekspor; koreksi stok historis belum tersedia');
   }
@@ -125,7 +126,7 @@ function workbookForBooks(report,Excel){
   pnlRows.forEach(([name,formula,result,old],i)=>{const r=i+6;pnl.getRow(r).values=[name,{formula,result},old??null,old==null?null:{formula:`B${r}-C${r}`,result:result-old}];pnl.getRow(r).height=28;for(const c of [2,3,4])pnl.getCell(r,c).numFmt='#,##0.00;[Red](#,##0.00);"-"';if([8,11,13].includes(r))pnl.getRow(r).font={bold:true,color:{argb:'FF187457'}};});
   const capitalRows=state.ledger.filter(r=>within(r.date));
   make('Modal dan pinjaman',['ID','Tanggal','Jenis','Keterangan','Nominal','Kartu','ID pembiayaan','ID pembayaran','Asumsi'],capitalRows.map(r=>[r.id,dayFirstDate(r.date),ledgerLabels[r.type]||r.type,r.note,r.amount,cardLabel(r.cardId),r.chargeId||'',r.paymentId||'',r.assumption?'Asumsi pemilik':'Catatan pengguna']),[5]);
-  make('Pembelian stok',['ID','Tanggal masuk','Produk','IMEI','Supplier','Unit masuk','HPP per unit','Total pembelian','Sumber dana'],state.inventory.filter(p=>within(p.date)).map((p,i)=>[p.id,dayFirstDate(p.date),p.name,p.imei||'',p.supplier,p.purchasedQty,p.cost,{formula:`F${i+6}*G${i+6}`,result:p.purchasedQty*p.cost},p.payMethod==='cash'?'Tunai / transfer':cardLabel(p.payMethod)]),[6,7,8]);
+  make('Pembelian stok',['ID','Tanggal masuk','Produk','IMEI','Supplier','Unit masuk','HPP per unit','Total pembelian','Sumber dana'],state.inventory.filter(p=>!p.purchaseCancelled&&within(p.date)).map((p,i)=>[p.id,dayFirstDate(p.date),p.name,p.imei||'',p.supplier,p.purchasedQty,p.cost,{formula:`F${i+6}*G${i+6}`,result:p.purchasedQty*p.cost},p.payMethod==='cash'?'Tunai / transfer':cardLabel(p.payMethod)]),[6,7,8]);
   make('Persediaan',['ID','Tanggal masuk','Produk','Varian','IMEI','Unit masuk','Sisa unit','HPP per unit','Nilai sisa positif','Harga rencana','Status'],state.inventory.map((p,i)=>[p.id,dayFirstDate(p.date),p.name,p.variant,p.imei||'',p.purchasedQty,p.qty,p.cost,{formula:`MAX(0,G${i+6})*H${i+6}`,result:Math.max(0,p.qty)*p.cost},p.price||null,p.deletedAt?'Dihapus / arsip':p.qty>0?'Tersedia':'Habis']),[6,7,8,9,10],'POSISI SAAT EKSPOR '+dayFirstDate(today)+' | Seluruh stok dan arsip, bukan saldo historis akhir periode');
   const mutations=[...state.cardCharges.filter(c=>within(c.date)).map(c=>[c.id,dayFirstDate(c.date),cardLabel(c.cardId),'Pembiayaan',c.note,c.amount,0,c.productId||'',c.installment?'Cicilan':'Tagihan biasa']),...state.cardPayments.filter(p=>within(p.date)).map(p=>[p.id,dayFirstDate(p.date),cardLabel(p.cardId),'Pembayaran',p.note,0,p.amount,p.installmentChargeId||'',p.assumption?'Asumsi otomatis':'Catatan pengguna'])];
   make('Mutasi kartu',['ID','Tanggal','Kartu','Jenis','Keterangan','Pokok pembiayaan','Pembayaran','Referensi','Status'],mutations,[6,7]);
