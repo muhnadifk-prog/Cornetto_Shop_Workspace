@@ -82,7 +82,8 @@ function commitStock(data){
   if(!CardSchedule.validDate(purchaseDate)||purchaseDate<'2000-01-01'||purchaseDate>TODAY)return formError('Tanggal masuk harus valid dan tidak di masa depan.');
   const supplier=suppliers.find(s=>s.id===data.supplierId&&s.active);
   if(!supplier)return formError('Pilih supplier aktif.');
-  const card=cards.find(c=>c.id===data.payMethod&&c.active);
+  const card=cards.find(c=>c.id===data.payMethod&&c.active&&!c.deletedAt&&!c.legacyAllocation);
+  if(card&&data.creditMode==='')return formError('Pilih skema pembayaran untuk pesanan baru.');
   let plan;
   try{
     if(data.creditMode==='installment'){

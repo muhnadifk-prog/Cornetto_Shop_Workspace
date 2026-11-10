@@ -34,7 +34,7 @@ function installmentFields(plan={},card){
     <div data-bank-schedule hidden></div>
     <div class="installment-preview" data-install-preview></div>`;
 }
-function stockInstallmentFields(){return `<section class="form-section" data-stock-credit hidden>${selectField('Skema pembayaran kartu','creditMode','<option value="full">Tagihan biasa</option><option value="installment">Cicilan</option>')}<div data-stock-installment hidden>${installmentFields()}<label class="purchase-finance-option"><input type="checkbox" name="autoPost" checked><span>Catat pembayaran otomatis saat jatuh tempo sebagai asumsi pemilik.</span></label></div></section>`;}
+function stockInstallmentFields(d={},card){return `<section class="form-section" data-stock-credit hidden>${selectField('Skema pembayaran kartu','creditMode',`${d.creditMode===''?'<option value="" selected>Pilih skema pesanan baru</option>':''}<option value="full">Tagihan biasa</option><option value="installment"${d.creditMode==='installment'?' selected':''}>Cicilan</option>`)}<div data-stock-installment hidden>${installmentFields(d.terms,card)}<label class="purchase-finance-option"><input type="checkbox" name="autoPost" ${d.autoPost!==false?'checked':''}><span>Catat pembayaran otomatis saat jatuh tempo sebagai asumsi pemilik.</span></label></div></section>`;}
 function updateInstallmentFields(f){
   const stock=f.id==='stockForm',card=cards.find(c=>c.id===f.elements.payMethod?.value),active=!stock||(!!card&&f.elements.creditMode.value==='installment');
   if(stock){f.querySelector('[data-stock-credit]').hidden=!card;f.elements.creditMode.disabled=!card;f.querySelector('[data-stock-installment]').hidden=!active;}

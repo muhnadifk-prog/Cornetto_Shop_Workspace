@@ -84,7 +84,7 @@ function prepareStockDelete(state,id,baseline,confirmPayments=false){
   }else next.inventory=next.inventory.filter(p=>p.id!==id);
   return next;
 }
-function stockDetailActions(p){return `<div class="stock-detail-actions"><button class="button" data-action="edit-stock" data-id="${p.id}">${icon('pencil')}Edit barang</button><button class="button stock-delete" data-action="delete-stock" data-id="${p.id}">${icon('trash-2')}Hapus barang</button></div>`;}
+function stockDetailActions(p){return `<div class="stock-detail-actions"><button class="button" data-action="copy-stock" data-id="${p.id}">${icon('copy')}Salin barang masuk</button><button class="button" data-action="edit-stock" data-id="${p.id}">${icon('pencil')}Edit barang</button><button class="button stock-delete" data-action="delete-stock" data-id="${p.id}">${icon('trash-2')}Hapus barang</button></div>`;}
 function stockEditOptions(values,current){return [...new Set([current||'',...values])].map(value=>`<option value="${esc(value)}" ${value===(current||'')?'selected':''}>${esc(value)||'Belum diisi'}</option>`).join('');}
 function editStockForm(id){
   const state=snapshot(),p=productById(id);if(!p||p.deletedAt)return;
