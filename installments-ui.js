@@ -71,9 +71,10 @@ function installmentForm(id){
   updateInstallmentFields(el('installmentForm'));
 }
 function installmentView(){
+  syncCardActivityFilters(true);
   const plans=filteredInstallmentPlans(),info=cardActivityPage(plans,'installments');
   return `<div class="section-heading card-activity-heading"><h2>Cicilan pembelian</h2><div class="heading-actions"><button class="icon-button" data-install-action="export" title="Ekspor jadwal cicilan" aria-label="Ekspor jadwal cicilan">${icon('download')}</button><button class="button" data-install-action="add">${icon('plus')}Atur cicilan</button></div></div>
-    <div class="table-toolbar card-activity-toolbar"><div class="filters"><select id="paymentCard" aria-label="Filter kartu">${cardFilterOptions()}</select><select id="installmentFilter" aria-label="Status cicilan">${[['active','Belum lunas'],['paid','Lunas'],['all','Semua cicilan']].map(([id,label])=>`<option value="${id}" ${installmentFilter===id?'selected':''}>${label}</option>`).join('')}</select>${cardMonthSelect('installmentMonth','Bulan tagihan cicilan',installmentMonth,installmentCharges().flatMap(c=>c.installment.schedule.map(r=>r.dueDate)))}</div></div>
+    <div class="table-toolbar card-activity-toolbar"><div class="filters"><select id="installmentBank" aria-label="Filter bank">${installmentBankOptions()}</select><select id="paymentCard" aria-label="Filter kartu">${cardFilterOptions(installmentBank)}</select><select id="installmentFilter" aria-label="Status cicilan">${[['active','Belum lunas'],['paid','Lunas'],['all','Semua cicilan']].map(([id,label])=>`<option value="${id}" ${installmentFilter===id?'selected':''}>${label}</option>`).join('')}</select>${cardMonthSelect('installmentMonth','Bulan tagihan cicilan',installmentMonth,installmentCharges().flatMap(c=>c.installment.schedule.map(r=>r.dueDate)))}</div></div>
     ${installmentSummary(plans)}
     <div class="module-table card-activity-table"><table><thead><tr><th>Pembelian</th><th>Kartu</th><th>Progres</th><th class="numeric">Sisa seluruh jadwal</th><th>Jatuh tempo berikutnya</th><th></th></tr></thead><tbody>${info.rows.map(c=>{
       const rows=c.installment.schedule,paid=rows.filter(r=>installmentRemaining(c,r)<=0).length,next=rows.find(r=>installmentRemaining(c,r)>0);
@@ -104,7 +105,7 @@ function routeInstallmentPayment(cardId,paymentId,ordinary){
 }
 function exportInstallments(){
   const rows=[['Kartu','Pembelian','Angsuran','Cetak','Jatuh tempo','Pokok','Bunga','Admin','Total','Dibayar','Sisa']];
-  for(const c of installmentCharges().filter(c=>selectedCard==='all'||c.cardId===selectedCard))for(const r of c.installment.schedule)rows.push([cardName(c.cardId),c.note,r.number,r.statementDate,r.dueDate,r.principal,r.interest,r.admin,installmentRowTotal(r),installmentPaid(c.id,r.number),installmentRemaining(c,r)]);
+  for(const c of installmentCharges().filter(matchesInstallmentCard))for(const r of c.installment.schedule)rows.push([cardName(c.cardId),c.note,r.number,r.statementDate,r.dueDate,r.principal,r.interest,r.admin,installmentRowTotal(r),installmentPaid(c.id,r.number),installmentRemaining(c,r)]);
   downloadData('cicilan-kartu_'+TODAY+'.csv','\ufeff'+rows.map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n'),'text/csv;charset=utf-8');
 }
 document.addEventListener('click',e=>{

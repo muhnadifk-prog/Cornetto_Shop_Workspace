@@ -36,12 +36,11 @@ document.addEventListener('submit',async e=>{
 function cardGroup(c){return cardGroups.find(g=>g.id===c.groupId);}
 function groupBalance(id){return sum(cards.filter(c=>c.groupId===id),c=>cardBalance(c.id));}
 function nearestCardDueLabel(active){
-  const name=c=>c.bank+' / '+c.name+(c.last4?' / '+c.last4:'');
-  const reminders=active.filter(c=>cardDue(c)&&ordinaryCardBalance(c.id)>0).map(c=>({date:cardDue(c),name:name(c)}));
-  for(const {charge,row} of installmentUpcoming()){const c=cards.find(c=>c.id===charge.cardId);if(c)reminders.push({date:row.dueDate,name:name(c)+' / cicilan '+row.number+'/'+charge.installment.months});}
+  const reminders=active.filter(c=>cardDue(c)&&ordinaryCardBalance(c.id)>0).map(c=>({date:cardDue(c),name:cardName(c.id)}));
+  for(const {charge,row} of installmentUpcoming())if(cards.some(c=>c.id===charge.cardId))reminders.push({date:row.dueDate,name:cardName(charge.cardId)});
   reminders.sort((a,b)=>a.date.localeCompare(b.date));
   if(!reminders.length)return 'Jatuh tempo terdekat <strong>-</strong>';
-  const due=reminders[0].date,names=[...new Set(reminders.filter(r=>r.date===due).map(r=>r.name))];
+  const due=reminders[0].date,names=[...new Set(reminders.filter(r=>r.date===due).map(r=>r.name))].sort((a,b)=>a.localeCompare(b,'id'));
   return `${due<TODAY?'Lewat jatuh tempo':'Jatuh tempo terdekat'} <strong>${cardDate(due)}</strong><span class="due-card-names">${names.map(esc).join(' &middot; ')}</span>`;
 }
 function cardLimit(c){return cardGroup(c)?.limit??c.limit;}
