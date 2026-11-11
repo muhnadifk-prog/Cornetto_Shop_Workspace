@@ -12,15 +12,20 @@ function stockChargeProducts(c){return [...new Set([c.productId,...(c.productIds
 function stockFundingDeletion(state,id){
   const linked=stockLinks(state,id).charges.filter(c=>c.source!=='cash-loan'&&!state.ledger.some(r=>r.type==='pinjam'&&r.chargeId===c.id));
   const shared=linked.filter(c=>stockChargeProducts(c).some(pid=>pid!==id&&!state.inventory.find(p=>p.id===pid)?.deletedAt));
-  const charges=linked.filter(c=>!shared.includes(c)),ids=new Set(charges.map(c=>c.id));
+  const charges=linked.filter(c=>!shared.includes(c));
+  return {...chargeRemovalRecords(state,charges),shared,
+    products:state.inventory.filter(p=>linked.some(c=>stockChargeProducts(c).includes(p.id)))
+  };
+}
+function chargeRemovalRecords(state,charges){
+  const ids=new Set(charges.map(c=>c.id));
   const payments=state.cardPayments.filter(p=>ids.has(p.installmentChargeId)||(p.source==='auto-sale'&&ids.has(p.purchaseChargeId)));
   const allocatedPayments=state.cardPayments.filter(p=>p.saleAllocations?.some(a=>ids.has(a.chargeId)));
   const paymentIds=new Set(payments.map(p=>p.id));
-  return {charges,shared,payments,allocatedPayments,
+  return {charges,payments,allocatedPayments,
     ledger:state.ledger.filter(r=>paymentIds.has(r.paymentId)||payments.some(p=>r.id==='ledger-'+p.id)||(!r.paymentId&&ids.has(r.chargeId))),
     corrections:(state.business.expenseCorrections||[]).filter(r=>ids.has(r.chargeId)),
-    imports:(state.migration?.installmentImport?.rows||[]).filter(r=>ids.has(r.chargeId)||charges.some(c=>c.importRowId===r.id)),
-    products:state.inventory.filter(p=>linked.some(c=>stockChargeProducts(c).includes(p.id)))
+    imports:(state.migration?.installmentImport?.rows||[]).filter(r=>ids.has(r.chargeId)||charges.some(c=>c.importRowId===r.id))
   };
 }
 function stockBaseline(state,id){return JSON.stringify({product:state.inventory.find(p=>p.id===id),links:stockLinks(state,id),funding:stockFundingDeletion(state,id)});}
@@ -76,28 +81,32 @@ function cancelStockPurchase(next,id,confirmPayments){
     // Preserve a recoverable copy outside live balances and automatic posting.
     const history=removal.charges.every(c=>c.installment)?'cancelledInstallments':'cancelledPurchases';
     p[history]??=[];
-    const {products,shared,allocatedPayments,...records}=removal;
-    const allocations=allocatedPayments.map(pay=>({paymentId:pay.id,allocations:pay.saleAllocations.filter(a=>removal.charges.some(c=>c.id===a.chargeId))}));
-    p[history].push({deletedAt:new Date().toISOString(),...structuredClone(records),allocations});
-    const chargeIds=new Set(removal.charges.map(c=>c.id)),paymentIds=new Set(removal.payments.map(r=>r.id)),ledgerIds=new Set(removal.ledger.map(r=>r.id));
-    next.cardCharges=next.cardCharges.filter(c=>!chargeIds.has(c.id));
-    next.cardPayments=next.cardPayments.filter(r=>!paymentIds.has(r.id));
-    for(const pay of allocatedPayments){
-      pay.saleAllocations=pay.saleAllocations.filter(a=>!chargeIds.has(a.chargeId));
-    }
-    next.ledger=next.ledger.filter(r=>!ledgerIds.has(r.id));
-    next.business.expenseCorrections=(next.business.expenseCorrections||[]).filter(r=>!chargeIds.has(r.chargeId));
+    removeChargeRecords(next,removal,p[history]);
     for(const pid of new Set(removal.charges.flatMap(stockChargeProducts))){
       const product=next.inventory.find(row=>row.id===pid);
       const remaining=stockLinks(next,pid);
       if(product&&!remaining.charges.length&&!remaining.sales.length)product.purchaseCancelled=true;
     }
-    for(const row of removal.imports){row.status='pending';row.dismissed=true;row.reason='Dibatalkan bersama penghapusan barang inventori.';delete row.chargeId;delete row.activatedAt;delete row.kind;delete row.productId;}
   }
   // Sales retain their original cost and product reference after stock deletion.
   if(links.sales.length||stockFundingLocked(p,links)||p.qty!==p.purchasedQty){
     if(!p.deletedAt){p.deletedAt=new Date().toISOString();p.deletedStockQty=p.qty;}p.qty=0;
   }else next.inventory=next.inventory.filter(p=>p.id!==id);
+}
+function removeChargeRecords(state,removal,history){
+  const {products,shared,allocatedPayments,...records}=removal;
+  const chargeIds=new Set(records.charges.map(c=>c.id)),paymentIds=new Set(records.payments.map(r=>r.id)),ledgerIds=new Set(records.ledger.map(r=>r.id));
+  const allocations=allocatedPayments.map(p=>({paymentId:p.id,allocations:p.saleAllocations.filter(a=>chargeIds.has(a.chargeId))}));
+  history.push({deletedAt:new Date().toISOString(),...structuredClone(records),allocations});
+  state.cardCharges=state.cardCharges.filter(c=>!chargeIds.has(c.id));
+  state.cardPayments=state.cardPayments.filter(p=>!paymentIds.has(p.id));
+  for(const pay of allocatedPayments)pay.saleAllocations=pay.saleAllocations.filter(a=>!chargeIds.has(a.chargeId));
+  state.ledger=state.ledger.filter(r=>!ledgerIds.has(r.id));
+  state.business.expenseCorrections=(state.business.expenseCorrections||[]).filter(r=>!chargeIds.has(r.chargeId));
+  for(const row of records.imports){
+    Object.assign(row,{status:'pending',dismissed:true,reason:'Tagihan kartu dibatalkan.'});
+    for(const key of ['chargeId','activatedAt','kind','productId','productIds'])delete row[key];
+  }
 }
 function deletedChargeAudit(state){
   const products=new Map(state.inventory.map(p=>[p.id,p]));
@@ -128,9 +137,68 @@ function deletedChargeNotice(){
   const count=deletedChargeAudit(snapshot()).length;
   return count?`<div class="repayment-review"><span>${count} tagihan terkait stok terhapus atau referensi barang yang belum lengkap</span><button class="button" data-stock-audit>Periksa tagihan stok</button></div>`:'';
 }
+function deleteChargeButton(charge){
+  return `<button type="button" class="icon-button stock-delete" data-delete-charge="${esc(charge.id)}" title="Hapus tagihan" aria-label="Hapus tagihan ${esc(charge.note||charge.id)}">${icon('trash-2')}</button>`;
+}
+function prepareChargeDeletion(state,id,expected){
+  const next=structuredClone(state),charge=next.cardCharges.find(c=>c.id===id);
+  if(!charge)throw Error('Tagihan sudah dihapus. Buka ulang detail kartu.');
+  const records=chargeRemovalRecords(next,[charge]),productIds=stockChargeProducts(charge);
+  const products=next.inventory.filter(p=>productIds.includes(p.id));
+  const baseline=JSON.stringify([records,products.map(p=>[p.id,p.name,p.payMethod,p.deletedAt,p.qty]),TODAY]);
+  next.business.cancelledCardCharges??=[];
+  removeChargeRecords(next,records,next.business.cancelledCardCharges);
+  for(const p of products){
+    const links=stockLinks(next,p.id);
+    if(p.deletedAt&&!links.charges.length&&!links.sales.length)p.purchaseCancelled=true;
+    if(p.payMethod!==charge.cardId||links.charges.some(c=>c.cardId===p.payMethod))continue;
+    const sources=[...new Set(links.charges.map(c=>c.cardId))];
+    p.payMethod=sources.length===1?sources[0]:'unknown';
+  }
+  reconcileSaleCardPayments(next);
+  const card=state.cards.find(c=>c.id===charge.cardId);
+  const members=card?.groupId?state.cards.filter(c=>c.groupId===card.groupId).map(c=>c.id):[charge.cardId];
+  const delta=sum(members,cid=>cardBalance(cid,'',state)-cardBalance(cid,'',next));
+  const key=JSON.stringify([baseline,members,delta]);
+  if(expected!==undefined&&key!==expected)throw Error('Tagihan atau pembayaran terkait berubah. Buka ulang konfirmasi.');
+  return {next,charge,records,products,delta,key};
+}
+function deleteChargeForm(id,origin){
+  const state=snapshot();
+  if(!state.cardCharges.some(c=>c.id===id)){toast('Tagihan sudah dihapus.');return;}
+  const {charge,records,products,delta,key}=prepareChargeDeletion(state,id);
+  const loan=records.ledger.filter(r=>r.type==='pinjam');
+  openDrawer('Hapus tagihan kartu?',`<form id="chargeDeleteForm" data-id="${esc(id)}" data-origin="${origin}">
+    <div class="stock-delete-summary"><strong>${esc(charge.note||'Tagihan kartu')}</strong><p>${esc(cardName(charge.cardId))} · ${cardDate(charge.date)} · ${esc(id)}</p></div>
+    <div class="detail-lines">${bookLine('Pokok tagihan',charge.amount)}
+    ${records.payments.length?bookLine('Pembayaran terkait yang ikut dihapus ('+records.payments.length+')',sum(records.payments,p=>p.amount)):''}
+    ${loan.length?bookLine('Penerimaan pinjaman yang ikut dihapus',sum(loan,r=>r.amount)):''}
+    ${bookLine('Perubahan sisa limit di tracker',delta,true)}</div>
+    ${charge.installment?'<p>Jadwal cicilan dan biaya terkait ikut dibatalkan.</p>':''}
+    ${products.some(p=>!p.deletedAt)?'<p>Unit barang tetap tersedia sesuai jumlah stok saat ini. Sumber pembayaran mengikuti tagihan yang tersisa.</p>':''}
+    <p id="formError" class="form-error" role="alert"></p><div class="form-footer"><button type="button" class="button" data-charge-back>Batal</button><button type="submit" class="button danger">${icon('trash-2')}Hapus tagihan</button></div>
+    </form>`,'KARTU KREDIT');
+  el('chargeDeleteForm').dataset.baseline=key;
+}
+function returnToChargeList(origin,cardId){
+  if(origin==='audit')deletedChargeReview();
+  else if(origin==='card')cardDetail(cardId);
+}
+document.addEventListener('click',e=>{
+  const button=e.target.closest('[data-delete-charge]');
+  if(button){
+    const origin=button.closest('#stockRepairForm')?'audit':button.closest('#drawer')?'card':'list';
+    deleteChargeForm(button.dataset.deleteCharge,origin);
+  }
+  const back=e.target.closest('[data-charge-back]');
+  if(back){
+    const f=back.form,cardId=cardCharges.find(c=>c.id===f.dataset.id)?.cardId;
+    closeDrawer();if(cardId)returnToChargeList(f.dataset.origin,cardId);
+  }
+});
 function deletedChargeReview(){
   const state=snapshot(),rows=deletedChargeAudit(state),simple=rows.filter(r=>r.simple);
-  const list=rows.map(({charge,owner,simple,reason})=>`<div class="expense-row"><div><strong>${esc(charge.note)}</strong><p>${esc(cardName(charge.cardId))} · ${cardDate(charge.date)} · ${esc(charge.id)}</p><p>${esc(reason)}</p></div><strong>${money(charge.amount)}</strong>${owner&&!simple?`<button type="button" class="button" data-action="delete-stock" data-id="${esc(owner)}">Tinjau</button>`:''}</div>`).join('');
+  const list=rows.map(({charge,reason})=>`<div class="expense-row"><div><strong>${esc(charge.note)}</strong><p>${esc(cardName(charge.cardId))} · ${cardDate(charge.date)} · ${esc(charge.id)}</p><p>${esc(reason)}</p></div><strong>${money(charge.amount)}</strong>${deleteChargeButton(charge)}</div>`).join('');
   openDrawer('Periksa tagihan stok',`<form id="stockRepairForm">${list||emptyState('Semua tagihan stok sudah diperiksa.')}${simple.length?`<p class="stock-edit-note">Pembatalan mencakup ${simple.length} tagihan biasa untuk barang yang seluruh unitnya sudah dihapus. Limit di tracker dihitung ulang pada masing-masing kartu.</p>${bookLine('Total tagihan yang dibatalkan',sum(simple,r=>r.charge.amount))}${formFooter('Batalkan '+simple.length+' tagihan stok')}`:''}</form>`,'SELURUH KARTU');
   el('stockRepairForm').dataset.baseline=simpleRepairBaseline(rows);
 }
@@ -171,16 +239,29 @@ function deleteStockForm(id){
   el('stockDeleteForm').dataset.baseline=stockBaseline(state,id);
 }
 document.addEventListener('submit',async e=>{
-  const f=e.target;if(!['stockEditForm','stockDeleteForm','stockRepairForm'].includes(f.id))return;
+  const f=e.target;if(!['stockEditForm','stockDeleteForm','stockRepairForm','chargeDeleteForm'].includes(f.id))return;
   e.preventDefault();if(f.dataset.saving)return;
   const button=f.querySelector('button[type="submit"]');if(!button)return;
   f.dataset.saving='true';button.disabled=true;
   let saving=false;
   try{
     await saveQueue;if(storageFailed)throw Error('Penyimpanan belum siap. Backup data sebelum mencoba lagi.');
-    const state=snapshot(),next=f.id==='stockRepairForm'?prepareDeletedChargeRepair(state,f.dataset.baseline):f.id==='stockEditForm'?prepareStockEdit(state,f.dataset.id,Object.fromEntries(new FormData(f)),f.dataset.baseline):prepareStockDelete(state,f.dataset.id,f.dataset.baseline,f.elements.confirmPayments?.checked===true);
+    const state=snapshot(),id=f.dataset.id,baseline=f.dataset.baseline;
+    let next,message;
+    switch(f.id){
+      case 'chargeDeleteForm':
+        next=prepareChargeDeletion(state,id,baseline).next;message='Tagihan dihapus. Limit kartu diperbarui.';break;
+      case 'stockRepairForm':
+        next=prepareDeletedChargeRepair(state,baseline);message='Tagihan stok dibatalkan. Limit kartu diperbarui.';break;
+      case 'stockEditForm':
+        next=prepareStockEdit(state,id,Object.fromEntries(new FormData(f)),baseline);message='Inventori diperbarui.';break;
+      default:
+        next=prepareStockDelete(state,id,baseline,f.elements.confirmPayments?.checked===true);
+        message=stockFundingDeletion(state,id).charges.length?'Barang dan tagihan dibatalkan. Limit kartu diperbarui.':'Barang dihapus.';
+    }
     validateSnapshot(next);savePending++;saving=true;updateStorageBadge();
-    await persist(next);applyState(next);closeDrawer();render();toast(f.id==='stockEditForm'?'Inventori diperbarui.':f.id==='stockRepairForm'?'Tagihan stok dibatalkan. Limit kartu diperbarui.':stockFundingDeletion(state,f.dataset.id).charges.length?'Barang dan tagihan dibatalkan. Limit kartu diperbarui.':'Barang dihapus.');
+    await persist(next);applyState(next);closeDrawer();render();toast(message);
+    if(f.id==='chargeDeleteForm')returnToChargeList(f.dataset.origin,state.cardCharges.find(c=>c.id===id).cardId);
   }catch(err){formError(err.message);}
   finally{if(saving)savePending--;updateStorageBadge();delete f.dataset.saving;if(button.isConnected)button.disabled=false;}
 });
